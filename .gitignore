@@ -1,0 +1,5 @@
+# Local artifacts, not part of the published design docs
+screenshots/
+
+# Separate project with its own repository
+claude-provider-switch/
