@@ -7,9 +7,9 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build --workspace @kennect/shared && npm run build --workspaces --if-present",
     "test": "npm test --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run build --workspace @kennect/shared && npm run typecheck --workspaces --if-present"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
