@@ -22,12 +22,18 @@ public sealed class JsonRpcDispatcher
     private readonly TokenStore _tokens;
     private readonly IMonitorProvider _monitors;
     private readonly IDesktopState _desktop;
+    private readonly WindowEnumerator _windows;
 
-    public JsonRpcDispatcher(TokenStore tokens, IMonitorProvider monitors, IDesktopState desktop)
+    public JsonRpcDispatcher(
+        TokenStore tokens,
+        IMonitorProvider monitors,
+        IDesktopState desktop,
+        WindowEnumerator windows)
     {
         _tokens = tokens ?? throw new ArgumentNullException(nameof(tokens));
         _monitors = monitors ?? throw new ArgumentNullException(nameof(monitors));
         _desktop = desktop ?? throw new ArgumentNullException(nameof(desktop));
+        _windows = windows ?? throw new ArgumentNullException(nameof(windows));
     }
 
     public Task<JsonElement> HandleAsync(JsonElement request)
@@ -90,6 +96,7 @@ public sealed class JsonRpcDispatcher
         {
             "hello" => HandleHello(id, request),
             "status" => HandleStatus(id),
+            "windows.list" => HandleWindowsList(id),
             var method => Error(id, MethodNotFoundCode, $"Method not found: {method}", "METHOD_NOT_FOUND"),
         };
     }
@@ -138,6 +145,16 @@ public sealed class JsonRpcDispatcher
                 Accessibility = true,
                 ScreenRecording = true,
             },
+        };
+
+        return Success(id, result);
+    }
+
+    private JsonElement HandleWindowsList(JsonNode? id)
+    {
+        var result = new WindowsListResult
+        {
+            Windows = [.. _windows.List()],
         };
 
         return Success(id, result);

@@ -25,6 +25,18 @@ public static class ProtocolJson
 /// <summary>A rectangle in physical screen pixels.</summary>
 public sealed class Rect
 {
+    public Rect()
+    {
+    }
+
+    public Rect(int x, int y, int width, int height)
+    {
+        X = x;
+        Y = y;
+        Width = width;
+        Height = height;
+    }
+
     public int X { get; set; }
 
     public int Y { get; set; }
@@ -32,6 +44,35 @@ public sealed class Rect
     public int Width { get; set; }
 
     public int Height { get; set; }
+}
+
+/// <summary>
+/// A top-level window as reported to the client. The ID is opaque; native
+/// handles never cross the protocol boundary. The title is metadata only.
+/// </summary>
+public sealed class WindowInfo
+{
+    public string WindowId { get; set; } = string.Empty;
+
+    public string Title { get; set; } = string.Empty;
+
+    public string ProcessName { get; set; } = string.Empty;
+
+    public int Pid { get; set; }
+
+    public Rect Bounds { get; set; } = new();
+
+    public bool Focused { get; set; }
+
+    public bool Minimized { get; set; }
+
+    public bool Visible { get; set; }
+}
+
+/// <summary>Result of <c>windows.list</c>.</summary>
+public sealed class WindowsListResult
+{
+    public List<WindowInfo> Windows { get; set; } = [];
 }
 
 /// <summary>A display known to the host.</summary>

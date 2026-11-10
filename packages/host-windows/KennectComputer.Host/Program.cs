@@ -21,7 +21,8 @@ internal static class Program
         tokens.Rotate();
         tokens.WriteSessionInfo(pipeName);
 
-        var dispatcher = new JsonRpcDispatcher(tokens, new WindowsMonitorProvider(), new DesktopState());
+        var windows = new WindowEnumerator(new WindowApi(), new WindowRegistry());
+        var dispatcher = new JsonRpcDispatcher(tokens, new WindowsMonitorProvider(), new DesktopState(), windows);
         var server = new PipeServer(pipeName, tokens, dispatcher);
 
         using var shutdown = new CancellationTokenSource();

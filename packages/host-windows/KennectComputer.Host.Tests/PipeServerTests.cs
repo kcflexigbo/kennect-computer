@@ -2,6 +2,7 @@ using System.IO.Pipes;
 using System.Text.Json;
 using KennectComputer.Host.Auth;
 using KennectComputer.Host.Ipc;
+using KennectComputer.Host.Windows;
 
 namespace KennectComputer.Host.Tests;
 
@@ -129,7 +130,11 @@ public sealed class PipeServerTests
             var tokens = TokenStore.CreateForTests(stateDirectory);
             var token = tokens.Rotate();
             var pipeName = "kennect-computer-test-" + Guid.NewGuid().ToString("N");
-            var dispatcher = new JsonRpcDispatcher(tokens, new FakeMonitorProvider(), new FakeDesktopState());
+            var dispatcher = new JsonRpcDispatcher(
+                tokens,
+                new FakeMonitorProvider(),
+                new FakeDesktopState(),
+                new WindowEnumerator(new FakeWindowApi(), new WindowRegistry()));
             var server = new PipeServer(pipeName, tokens, dispatcher);
             var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             var run = server.RunAsync(cancellation.Token);

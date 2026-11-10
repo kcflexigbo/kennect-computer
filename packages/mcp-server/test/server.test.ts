@@ -47,8 +47,13 @@ describe("computer_status MCP tool", () => {
 
     const { tools } = await client.listTools();
 
-    expect(tools).toHaveLength(1);
-    expect(tools[0]).toMatchObject({
+    expect(tools.map((tool) => tool.name)).toEqual([
+      "computer_status",
+      "computer_windows",
+    ]);
+
+    const status = tools.find((tool) => tool.name === "computer_status");
+    expect(status).toMatchObject({
       name: "computer_status",
       annotations: {
         readOnlyHint: true,
@@ -61,7 +66,7 @@ describe("computer_status MCP tool", () => {
         additionalProperties: false,
       },
     });
-    expect(tools[0]?.description).toContain("read-only");
+    expect(status?.description).toContain("read-only");
   });
 
   it("returns the envelope as structuredContent plus a JSON text block", async () => {
