@@ -1,7 +1,9 @@
 using System.Runtime.InteropServices;
 
 using KennectComputer.Host.Auth;
+using KennectComputer.Host.Control;
 using KennectComputer.Host.Ipc;
+using KennectComputer.Host.Policy;
 using KennectComputer.Host.Windows;
 
 namespace KennectComputer.Host;
@@ -22,8 +24,20 @@ internal static class Program
         tokens.WriteSessionInfo(pipeName);
 
         var windowApi = new WindowApi();
-        var windows = new WindowEnumerator(windowApi, new WindowRegistry(windowApi));
-        var dispatcher = new JsonRpcDispatcher(tokens, new WindowsMonitorProvider(), new DesktopState(), windows);
+        var registry = new WindowRegistry(windowApi);
+        var windows = new WindowEnumerator(windowApi, registry);
+        var selection = new SelectionService(
+            registry,
+            new AllowAllAuthorization(),
+            new SelectionStore(),
+            new ForegroundService(new WindowsForegroundApi()),
+            windows);
+        var dispatcher = new JsonRpcDispatcher(
+            tokens,
+            new WindowsMonitorProvider(),
+            new DesktopState(),
+            windows,
+            selection);
         var server = new PipeServer(pipeName, tokens, dispatcher);
 
         using var shutdown = new CancellationTokenSource();

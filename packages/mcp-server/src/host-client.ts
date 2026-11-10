@@ -21,7 +21,7 @@ const MAX_FRAME_BYTES = 16 * 1024 * 1024;
 interface JsonRpcErrorBody {
   code?: unknown;
   message?: unknown;
-  data?: { code?: unknown };
+  data?: { code?: unknown; candidates?: unknown };
 }
 
 interface JsonRpcResponse {
@@ -318,7 +318,7 @@ export class HostClient {
       const text = typeof message.error.message === "string"
         ? message.error.message
         : `The host call failed (${code}).`;
-      pending.reject(new HostError(code, text));
+      pending.reject(new HostError(code, text, { data: message.error.data }));
       return;
     }
 

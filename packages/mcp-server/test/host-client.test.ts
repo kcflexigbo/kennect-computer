@@ -83,6 +83,27 @@ describe("HostClient", () => {
     expect(fake.statusRequests).toBe(1);
   });
 
+  it("preserves structured error data such as ambiguous-target candidates", async () => {
+    fake = await startFakeHost({
+      statusError: {
+        code: "INVALID_REQUEST",
+        message: "The target is ambiguous.",
+        data: {
+          candidates: [{ windowId: "w_1", title: "a.txt - Notepad", pid: 4242 }],
+        },
+      },
+    });
+    client = new HostClient(fake.pipePath, fake.tokenPath);
+    await client.connect();
+
+    await expect(client.request("status", {})).rejects.toMatchObject({
+      code: "INVALID_REQUEST",
+      data: {
+        candidates: [{ windowId: "w_1", title: "a.txt - Notepad", pid: 4242 }],
+      },
+    });
+  });
+
   it("rejects when the host speaks a different protocol version", async () => {
     fake = await startFakeHost({ helloProtocolVersion: 2 });
     client = new HostClient(fake.pipePath, fake.tokenPath);

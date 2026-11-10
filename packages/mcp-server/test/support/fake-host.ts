@@ -27,6 +27,8 @@ export interface FakeHostOptions {
   statusDelayMs?: number;
   /** Override the status result payload. */
   statusPayload?: unknown;
+  /** Answer `status` with a JSON-RPC error carrying this machine code and data. */
+  statusError?: { code: string; message: string; data?: Record<string, unknown> };
   /** Write `session.json` into the temp directory (defaults to true). */
   writeSession?: boolean;
 }
@@ -201,6 +203,20 @@ class FakeHostServer implements FakeHost {
       }
 
       if (this.options.respondToStatus === false) {
+        return;
+      }
+
+      if (this.options.statusError !== undefined) {
+        const { code, message, data } = this.options.statusError;
+        await this.send(socket, {
+          jsonrpc: "2.0",
+          id,
+          error: {
+            code: -32000,
+            message,
+            data: { ...data, code },
+          },
+        });
         return;
       }
 

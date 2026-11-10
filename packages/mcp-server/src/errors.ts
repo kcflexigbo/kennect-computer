@@ -10,6 +10,8 @@ export function isErrorCode(value: unknown): value is ErrorCode {
 export interface HostErrorOptions {
   retryable?: boolean;
   cause?: unknown;
+  /** Structured JSON-RPC error data, e.g. ambiguous-target candidates (R20). */
+  data?: unknown;
 }
 
 /**
@@ -20,12 +22,15 @@ export interface HostErrorOptions {
 export class HostError extends Error {
   readonly code: ErrorCode;
   readonly retryable: boolean;
+  /** Structured details supplied by the host, such as ambiguity candidates. */
+  readonly data?: unknown;
 
   constructor(code: ErrorCode, message: string, options: HostErrorOptions = {}) {
     super(message, options.cause === undefined ? undefined : { cause: options.cause });
     this.name = "HostError";
     this.code = code;
     this.retryable = options.retryable ?? defaultRetryable(code);
+    this.data = options.data;
   }
 }
 

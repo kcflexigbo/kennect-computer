@@ -50,6 +50,8 @@ describe("computer_status MCP tool", () => {
     expect(tools.map((tool) => tool.name)).toEqual([
       "computer_status",
       "computer_windows",
+      "computer_select",
+      "computer_focus",
     ]);
 
     const status = tools.find((tool) => tool.name === "computer_status");
