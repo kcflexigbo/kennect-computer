@@ -10,7 +10,9 @@ namespace KennectComputer.Spike.Windows;
 
 /// <summary>
 /// Throwaway M0a spike: enumerate Feishu windows, read its UIA tree, and capture the window.
-/// Read-only: it never types, clicks, invokes a pattern, or sets a value.
+/// Read-only for app content: it never types, clicks, invokes a pattern, or sets a value.
+/// The brief mandates ShowWindow(SW_RESTORE)/SetForegroundWindow; the probe captures the
+/// original WINDOWPLACEMENT and restores it after the screenshot (ruling R12).
 /// Message text, chat names, and drafts are redacted before anything is printed.
 /// </summary>
 internal static class Program
@@ -60,7 +62,9 @@ internal static class Program
         Console.WriteLine($"OS: {RuntimeInformation.OSDescription}");
         Console.WriteLine("Redaction: message text, chat titles, and draft values print as <redacted: N chars>; " +
                           "only structural UI labels (Send, Chats, Feishu, ...) are kept.");
-        Console.WriteLine("Mode: read-only. No patterns invoked, no values set, no input synthesized.");
+        Console.WriteLine("Mode: read-only for app content. No patterns invoked, no values set, no input synthesized.");
+        Console.WriteLine("Window restore/activation is mandated by the brief; the original WINDOWPLACEMENT is " +
+                          "restored after capture (ruling R12).");
         Console.WriteLine();
 
         var windows = EnumerateFeishuWindows();
@@ -97,11 +101,35 @@ internal static class Program
                               $"{child.Bounds.Width}x{child.Bounds.Height} visible={child.Visible} pid={child.ProcessId}");
         }
 
+        // The brief mandates SW_RESTORE + SetForegroundWindow. Capture the original
+        // placement first so the geometry can be put back after the screenshot (R12).
+        var originalPlacement = new WindowPlacement { Length = Marshal.SizeOf<WindowPlacement>() };
+        var hasOriginalPlacement = GetWindowPlacement(main.Handle, ref originalPlacement);
+        Console.WriteLine($"Original WINDOWPLACEMENT: captured={hasOriginalPlacement}, " +
+                          $"showCmd={originalPlacement.ShowCmd}, " +
+                          $"normal=({originalPlacement.NormalPosition.Left},{originalPlacement.NormalPosition.Top}) " +
+                          $"{originalPlacement.NormalPosition.Right - originalPlacement.NormalPosition.Left}x" +
+                          $"{originalPlacement.NormalPosition.Bottom - originalPlacement.NormalPosition.Top}");
+
         // Restore and foreground the main window. No input is synthesized.
         ShowWindow(main.Handle, SwRestore);
         var foregrounded = SetForegroundWindow(main.Handle);
         Console.WriteLine($"ShowWindow(SW_RESTORE) + SetForegroundWindow -> {foregrounded}; waiting 1000 ms");
         Thread.Sleep(1000);
+
+        // GetWindowRect returned the minimized rect during enumeration. Refresh it after
+        // SW_RESTORE so geometry filters and the capture use the measured window size.
+        GetWindowRect(main.Handle, out var restoredRect);
+        var windowBounds = Rectangle.FromLTRB(restoredRect.Left, restoredRect.Top, restoredRect.Right, restoredRect.Bottom);
+        if (windowBounds.Width <= 100 || windowBounds.Height <= 100)
+        {
+            var normal = originalPlacement.NormalPosition;
+            windowBounds = Rectangle.FromLTRB(normal.Left, normal.Top, normal.Right, normal.Bottom);
+            Console.WriteLine("Refresh still returned a minimized/tiny rect; using WINDOWPLACEMENT normal position.");
+        }
+
+        Console.WriteLine($"Measured window bounds after restore: ({windowBounds.Left},{windowBounds.Top}) " +
+                          $"{windowBounds.Width}x{windowBounds.Height}, iconic={IsIconic(main.Handle)}");
 
         using var automation = new UIA3Automation
         {
@@ -198,7 +226,7 @@ internal static class Program
         var conversationSource = "argument/env";
         if (string.IsNullOrEmpty(conversationName))
         {
-            var selectedChat = FindSelectedChatItem(nodes, main.Bounds);
+            var selectedChat = FindSelectedChatItem(nodes, windowBounds);
             if (selectedChat is not null)
             {
                 conversationName = selectedChat.Name;
@@ -208,7 +236,7 @@ internal static class Program
 
         if (string.IsNullOrEmpty(conversationName))
         {
-            var header = FindHeaderText(nodes, main.Bounds);
+            var header = FindHeaderText(nodes, windowBounds);
             if (header is not null)
             {
                 conversationName = header.Name;
@@ -260,7 +288,7 @@ internal static class Program
         {
             Console.WriteLine($"  {Describe(node)} patterns={PatternSummary(node.Element)} {ReadValueSummary(node.Element)} " +
                               $"{TextPatternSummary(node.Element)} {LegacySummary(node.Element)} " +
-                              $"bottomBand={IsInBottomBand(node, main.Bounds)}");
+                              $"bottomBand={IsInBottomBand(node, windowBounds)}");
             var preview = TextPreviewIfEnabled(node.Element);
             if (preview is not null)
             {
@@ -296,7 +324,7 @@ internal static class Program
             .Where(n => n.ControlType is "ListItem" or "TreeItem" or "Text" ||
                         (n.ControlType == "Group" && n.Name.Length > 0 && n.Bounds.Height >= 20))
             .Where(n => n.Name.Length > 0)
-            .Where(n => IsInLeftPane(n, main.Bounds))
+            .Where(n => IsInLeftPane(n, windowBounds))
             .ToList();
         Console.WriteLine($"Chat-list candidates (ListItem/TreeItem/Text/named Group in left pane): {chatItems.Count}");
         foreach (var node in chatItems.Take(25))
@@ -306,14 +334,27 @@ internal static class Program
         }
 
         Console.WriteLine();
-        var region = AnalyzeMessageRegion(nodes, main.Bounds);
-        DeepProbe(automation, nodes, region, main.Bounds);
+        var region = AnalyzeMessageRegion(nodes, windowBounds);
+        DeepProbe(automation, nodes, region, windowBounds);
 
         Console.WriteLine();
-        CaptureWindow(main, screenshotPath);
+        CaptureWindow(main, windowBounds, screenshotPath);
 
         Console.WriteLine();
-        Console.WriteLine("Done. Read-only spike: no patterns invoked, no values set, no input synthesized.");
+        if (hasOriginalPlacement)
+        {
+            var restored = SetWindowPlacement(main.Handle, ref originalPlacement);
+            Console.WriteLine($"Restored original WINDOWPLACEMENT after capture: {restored} " +
+                              $"(showCmd={originalPlacement.ShowCmd}).");
+        }
+        else
+        {
+            Console.WriteLine("Original WINDOWPLACEMENT was not captured; window geometry left as measured.");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Done. Read-only for app content: no patterns invoked, no values set, no input synthesized. " +
+                          "Window placement restored where captured (R12).");
         return 0;
     }
 
@@ -585,10 +626,10 @@ internal static class Program
         }
     }
 
-    private static void CaptureWindow(WindowInfo main, string outputPath)
+    private static void CaptureWindow(WindowInfo main, Rectangle windowBounds, string outputPath)
     {
-        var width = main.Bounds.Width;
-        var height = main.Bounds.Height;
+        var width = windowBounds.Width;
+        var height = windowBounds.Height;
         if (width <= 0 || height <= 0)
         {
             Console.WriteLine($"Screenshot skipped: invalid window bounds {width}x{height}.");
@@ -1007,10 +1048,31 @@ internal static class Program
 
     private static WindowInfo? PickMainWindow(List<WindowInfo> windows)
     {
+        // The Feishu main window keeps title "Feishu" and stays Visible=True when
+        // minimized, but GetWindowRect then returns an off-screen 237x39 rect. Prefer
+        // the visible titled Chrome_WidgetWin_1 window over hidden helper windows.
+        var titled = windows
+            .Where(w => w.Visible && w.Title.Length > 0)
+            .OrderByDescending(w => w.ClassName.Equals("Chrome_WidgetWin_1", StringComparison.OrdinalIgnoreCase))
+            .ThenByDescending(w => (long)w.Bounds.Width * w.Bounds.Height)
+            .FirstOrDefault();
+        if (titled is not null)
+        {
+            return titled;
+        }
+
+        var visibleMain = windows
+            .Where(w => w.Visible && w.ClassName.Equals("Chrome_WidgetWin_1", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(w => (long)w.Bounds.Width * w.Bounds.Height)
+            .FirstOrDefault();
+        if (visibleMain is not null)
+        {
+            return visibleMain;
+        }
+
         var visible = windows
             .Where(w => w.Visible && w.Bounds.Width > 100 && w.Bounds.Height > 100)
             .OrderByDescending(w => (long)w.Bounds.Width * w.Bounds.Height)
-            .ThenBy(w => w.Title.Length == 0)
             .FirstOrDefault();
 
         return visible ?? windows
@@ -1097,6 +1159,17 @@ internal static class Program
         public int Bottom;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WindowPlacement
+    {
+        public int Length;
+        public int Flags;
+        public int ShowCmd;
+        public Point MinPosition;
+        public Point MaxPosition;
+        public Rect NormalPosition;
+    }
+
     private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
     [DllImport("user32.dll")]
@@ -1128,6 +1201,12 @@ internal static class Program
 
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowPlacement(IntPtr hWnd, ref WindowPlacement placement);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowPlacement(IntPtr hWnd, ref WindowPlacement placement);
 
     [DllImport("user32.dll")]
     private static extern bool PrintWindow(IntPtr hWnd, IntPtr hDc, uint flags);

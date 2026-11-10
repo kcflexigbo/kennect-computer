@@ -1,33 +1,34 @@
 === Kennect Computer spike: Windows Feishu accessibility ===
-Time (UTC): 2026-11-10T07:37:38.9548393Z
+Time (UTC): 2026-11-10T07:59:18.5890894Z
 OS: Microsoft Windows 10.0.26300
 Redaction: message text, chat titles, and draft values print as <redacted: N chars>; only structural UI labels (Send, Chats, Feishu, ...) are kept.
-Mode: read-only. No patterns invoked, no values set, no input synthesized.
+Mode: read-only for app content. No patterns invoked, no values set, no input synthesized.
+Window restore/activation is mandated by the brief; the original WINDOWPLACEMENT is restored after capture (ruling R12).
 
 Feishu.exe top-level windows (EnumWindows): 12
-  [0] hwnd=0x5026E title="Feishu" class="Chrome_WidgetWin_1" pid=9180 bounds=(2853,268) 1317x750 visible=True iconic=False
-  [1] hwnd=0x306B8 title="<empty>" class="Chrome_WidgetWin_0" pid=11520 bounds=(0,0) 0x0 visible=False iconic=False
-  [2] hwnd=0x106CA title="<empty>" class="Lark_StatusTrayWindow" pid=9180 bounds=(0,0) 0x0 visible=False iconic=False
-  [3] hwnd=0x10696 title="<empty>" class="crashpad_SessionEndWatcher" pid=12692 bounds=(0,0) 136x39 visible=False iconic=False
-  [4] hwnd=0x10690 title="<empty>" class="Chrome_StatusTrayWindow" pid=9180 bounds=(0,0) 0x0 visible=False iconic=False
-  [5] hwnd=0x60688 title="<empty>" class="Chrome_WidgetWin_0" pid=9180 bounds=(114,114) 1920x1117 visible=False iconic=False
+  [0] hwnd=0x306B8 title="<empty>" class="Chrome_WidgetWin_0" pid=11520 bounds=(0,0) 0x0 visible=False iconic=False
+  [1] hwnd=0x106CA title="<empty>" class="Lark_StatusTrayWindow" pid=9180 bounds=(0,0) 0x0 visible=False iconic=False
+  [2] hwnd=0x10696 title="<empty>" class="crashpad_SessionEndWatcher" pid=12692 bounds=(0,0) 136x39 visible=False iconic=False
+  [3] hwnd=0x10690 title="<empty>" class="Chrome_StatusTrayWindow" pid=9180 bounds=(0,0) 0x0 visible=False iconic=False
+  [4] hwnd=0x5026E title="Feishu" class="Chrome_WidgetWin_1" pid=9180 bounds=(-32000,-32000) 237x39 visible=True iconic=True
+  [5] hwnd=0x60688 title="<empty>" class="Chrome_WidgetWin_0" pid=9180 bounds=(114,114) 1920x1117 visible=True iconic=False
   [6] hwnd=0x2067E title="<empty>" class="Base_PowerMessageWindow" pid=9180 bounds=(0,0) 0x0 visible=False iconic=False
   [7] hwnd=0x5021C title="<empty>" class="Chrome_WidgetWin_0" pid=9180 bounds=(0,0) 0x0 visible=False iconic=False
-  [8] hwnd=0x906B0 title="<redacted: 11 chars>" class="MSCTFIME UI" pid=9180 bounds=(0,0) 0x0 visible=False iconic=False
-  [9] hwnd=0x20672 title="<redacted: 11 chars>" class="IME" pid=9180 bounds=(0,0) 0x0 visible=False iconic=False
-  [10] hwnd=0x206CC title="<redacted: 11 chars>" class="IME" pid=11520 bounds=(0,0) 0x0 visible=False iconic=False
-  [11] hwnd=0x10698 title="<redacted: 11 chars>" class="IME" pid=12692 bounds=(0,0) 0x0 visible=False iconic=False
+  [8] hwnd=0x206CC title="<redacted: 11 chars>" class="IME" pid=11520 bounds=(0,0) 0x0 visible=False iconic=False
+  [9] hwnd=0x10698 title="<redacted: 11 chars>" class="IME" pid=12692 bounds=(0,0) 0x0 visible=False iconic=False
+  [10] hwnd=0x906B0 title="<redacted: 11 chars>" class="MSCTFIME UI" pid=9180 bounds=(0,0) 0x0 visible=False iconic=False
+  [11] hwnd=0x20672 title="<redacted: 11 chars>" class="IME" pid=9180 bounds=(0,0) 0x0 visible=False iconic=False
 
-Main window: hwnd=0x5026E pid=9180 class="Chrome_WidgetWin_1" title="Feishu" bounds=(2853,268) 1317x750
+Main window: hwnd=0x5026E pid=9180 class="Chrome_WidgetWin_1" title="Feishu" bounds=(-32000,-32000) 237x39
 Feishu version: 8.4.0.18
 Image: Feishu.exe
 
-Child HWNDs of main window (EnumChildWindows): 4
-  hwnd=0xA0B46 class="Chrome_RenderWidgetHostHWND" title="<redacted: 20 chars>" bounds=(2861,268) 0x0 visible=False pid=9180
-  hwnd=0x406A8 class="Chrome_RenderWidgetHostHWND" title="<redacted: 20 chars>" bounds=(3495,296) 661x708 visible=True pid=9180
-  hwnd=0x390AEC class="Chrome_RenderWidgetHostHWND" title="<redacted: 20 chars>" bounds=(3041,296) 448x708 visible=True pid=9180
-  hwnd=0x306C8 class="Intermediate D3D Window" title="<empty>" bounds=(2861,268) 1301x742 visible=True pid=11520
+Child HWNDs of main window (EnumChildWindows): 2
+  hwnd=0xA0B46 class="Chrome_RenderWidgetHostHWND" title="<redacted: 20 chars>" bounds=(-31992,-32000) 0x0 visible=False pid=9180
+  hwnd=0x306C8 class="Intermediate D3D Window" title="<empty>" bounds=(-31992,-32000) 1301x742 visible=True pid=11520
+Original WINDOWPLACEMENT: captured=True, showCmd=2, normal=(2853,268) 1317x750
 ShowWindow(SW_RESTORE) + SetForegroundWindow -> False; waiting 1000 ms
+Measured window bounds after restore: (2853,268) 1317x750, iconic=False
 Walk attempt 1: nodes=312, namedText=16, sizedDocuments=2
 
 === UIA tree ===
@@ -332,4 +333,6 @@ Deep summary for other Document #27: nodes=270, Text=51, namedText=51, lengths m
 
 Screenshot: PrintWindow(PW_RENDERFULLCONTENT)=True, size=1317x750, mostlyBlack=False, path=docs\spikes\windows-feishu.png
 
-Done. Read-only spike: no patterns invoked, no values set, no input synthesized.
+Restored original WINDOWPLACEMENT after capture: True (showCmd=2).
+
+Done. Read-only for app content: no patterns invoked, no values set, no input synthesized. Window placement restored where captured (R12).

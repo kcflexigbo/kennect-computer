@@ -23,7 +23,9 @@ The probe:
 - captures the window with `PrintWindow(PW_RENDERFULLCONTENT)` to
   `docs/spikes/windows-feishu.png`
 
-The probe never invokes a pattern, sets a value, or synthesizes input.
+The probe never invokes a pattern, sets a value, or synthesizes input. It does perform the
+brief-mandated `ShowWindow(SW_RESTORE)`/`SetForegroundWindow`; it captures the original
+`WINDOWPLACEMENT` first and restores it after the screenshot (ruling R12).
 
 ### Redaction
 
