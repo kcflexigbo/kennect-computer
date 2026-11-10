@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "build": "npm run build --workspace @kennect/shared && npm run build --workspaces --if-present",
+    "pretest": "npm run build --workspace @kennect/shared",
     "test": "npm test --workspaces --if-present",
     "typecheck": "npm run build --workspace @kennect/shared && npm run typecheck --workspaces --if-present"
   },
