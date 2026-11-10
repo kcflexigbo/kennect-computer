@@ -38,6 +38,12 @@ public sealed class DispatcherTests
         var tempDir = NewTempDir();
         var tokens = TokenStore.CreateForTests(tempDir);
         var dispatcher = new JsonRpcDispatcher(tokens, new FakeMonitorProvider(), new FakeDesktopState { Locked = true });
+        var token = tokens.Rotate();
+
+        // A real client authenticates first; per-connection gating lives in PipeServer.
+        var hello = await dispatcher.HandleAsync(JsonDocument.Parse($$$"""{"jsonrpc":"2.0","id":1,"method":"hello","params":{"token":"{{{token}}}","protocolVersion":1,"clientName":"test"}}""").RootElement);
+        Assert.True(hello.TryGetProperty("result", out _));
+
         var response = await dispatcher.HandleAsync(JsonDocument.Parse("""{"jsonrpc":"2.0","id":2,"method":"status","params":{}}""").RootElement);
         Assert.True(response.GetProperty("result").GetProperty("locked").GetBoolean());
     }

@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.IO.Pipes;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 using KennectComputer.Host.Auth;
 using KennectComputer.Host.Protocol;
@@ -9,11 +10,16 @@ namespace KennectComputer.Host.Ipc;
 
 /// <summary>
 /// Accepts framed JSON-RPC connections on the per-user named pipe.
-/// Each connection is served independently; an UNAUTHORIZED handshake closes it.
+/// Each connection is served independently and must authenticate with a
+/// valid <c>hello</c> before any other method; an UNAUTHORIZED response closes it.
 /// </summary>
 public sealed class PipeServer
 {
+    /// <summary>Maximum number of connections served at once; excess clients get HOST_UNAVAILABLE.</summary>
+    public const int MaxConcurrentClients = 8;
+
     private const string PipePathPrefix = @"\\.\pipe\";
+    private const int MaxServerInstances = MaxConcurrentClients + 1;
 
     private readonly string _pipeName;
     private readonly TokenStore _tokens;
@@ -48,17 +54,22 @@ public sealed class PipeServer
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
-        var clients = new ConcurrentBag<Task>();
+        var clients = new ConcurrentDictionary<long, Task>();
+        long nextClientId = 0;
+
         try
         {
             while (!cancellationToken.IsCancellationRequested)
             {
+                // CurrentUserOnly applies a DACL that grants access to the current
+                // user only, matching the token file's ACL. One extra server
+                // instance lets the accept loop turn away overflow clients.
                 var pipe = new NamedPipeServerStream(
                     _pipeName,
                     PipeDirection.InOut,
-                    NamedPipeServerStream.MaxAllowedServerInstances,
+                    MaxServerInstances,
                     PipeTransmissionMode.Byte,
-                    PipeOptions.Asynchronous);
+                    PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
 
                 try
                 {
@@ -75,12 +86,62 @@ public sealed class PipeServer
                     throw;
                 }
 
-                clients.Add(HandleClientAsync(pipe, cancellationToken));
+                if (clients.Count >= MaxConcurrentClients)
+                {
+                    await RejectClientAsync(pipe, cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                var clientId = Interlocked.Increment(ref nextClientId);
+                var clientTask = HandleClientAsync(pipe, cancellationToken);
+                clients[clientId] = clientTask;
+                RemoveWhenComplete(clients, clientId, clientTask);
             }
         }
         finally
         {
-            await Task.WhenAll(clients).ConfigureAwait(false);
+            await Task.WhenAll(clients.Values).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Removes a finished client from the active set so tracking stays bounded.</summary>
+    private static void RemoveWhenComplete(
+        ConcurrentDictionary<long, Task> clients,
+        long clientId,
+        Task clientTask)
+    {
+        _ = clientTask.ContinueWith(
+            completed =>
+            {
+                clients.TryRemove(clientId, out _);
+
+                // Observe a fault so it cannot surface later as an unobserved exception.
+                _ = completed.Exception;
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+    }
+
+    private static async Task RejectClientAsync(NamedPipeServerStream pipe, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await WriteResponseAsync(
+                pipe,
+                JsonRpcDispatcher.HostUnavailableError(
+                    $"The host is already serving {MaxConcurrentClients} clients."),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (IOException)
+        {
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            await pipe.DisposeAsync().ConfigureAwait(false);
         }
     }
 
@@ -88,6 +149,7 @@ public sealed class PipeServer
     {
         await using (pipe)
         {
+            var authenticated = false;
             try
             {
                 while (!cancellationToken.IsCancellationRequested)
@@ -115,7 +177,33 @@ public sealed class PipeServer
                     try
                     {
                         using var document = JsonDocument.Parse(frame);
-                        response = await _dispatcher.HandleAsync(document.RootElement.Clone()).ConfigureAwait(false);
+                        var request = document.RootElement;
+                        var method = GetMethod(request);
+
+                        if (method == "hello")
+                        {
+                            if (!HasValidToken(request))
+                            {
+                                response = JsonRpcDispatcher.UnauthorizedError(
+                                    "The session token is missing, stale, or invalid.",
+                                    GetId(request));
+                            }
+                            else
+                            {
+                                response = await _dispatcher.HandleAsync(request.Clone()).ConfigureAwait(false);
+                                authenticated = response.TryGetProperty("result", out _);
+                            }
+                        }
+                        else if (!authenticated)
+                        {
+                            response = JsonRpcDispatcher.UnauthorizedError(
+                                "Authenticate with hello before calling other methods.",
+                                GetId(request));
+                        }
+                        else
+                        {
+                            response = await _dispatcher.HandleAsync(request.Clone()).ConfigureAwait(false);
+                        }
                     }
                     catch (JsonException exception)
                     {
@@ -138,8 +226,32 @@ public sealed class PipeServer
             {
                 // The client disconnected mid-frame.
             }
+            catch (Exception)
+            {
+                // A single client must never fault the host's accept loop.
+            }
         }
     }
+
+    private bool HasValidToken(JsonElement request)
+        => request.ValueKind == JsonValueKind.Object
+            && request.TryGetProperty("params", out var parameters)
+            && parameters.ValueKind == JsonValueKind.Object
+            && parameters.TryGetProperty("token", out var token)
+            && token.ValueKind == JsonValueKind.String
+            && _tokens.Validate(token.GetString());
+
+    private static string? GetMethod(JsonElement request)
+        => request.ValueKind == JsonValueKind.Object
+            && request.TryGetProperty("method", out var method)
+            && method.ValueKind == JsonValueKind.String
+                ? method.GetString()
+                : null;
+
+    private static JsonNode? GetId(JsonElement request)
+        => request.ValueKind == JsonValueKind.Object && request.TryGetProperty("id", out var id)
+            ? JsonNode.Parse(id.GetRawText())
+            : null;
 
     private static async Task WriteResponseAsync(
         Stream stream,

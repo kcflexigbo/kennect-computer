@@ -50,6 +50,14 @@ public sealed class JsonRpcDispatcher
     public static JsonElement FrameTooLargeError(string message)
         => Error(null, -32002, message, "FRAME_TOO_LARGE");
 
+    /// <summary>Builds an UNAUTHORIZED error, echoed with the request id when one is known.</summary>
+    public static JsonElement UnauthorizedError(string message, JsonNode? id = null)
+        => Error(id, UnauthorizedCode, message, "UNAUTHORIZED");
+
+    /// <summary>Builds the error returned when the host is already serving its client limit.</summary>
+    public static JsonElement HostUnavailableError(string message)
+        => Error(null, -32003, message, "HOST_UNAVAILABLE");
+
     /// <summary>True when a response is an UNAUTHORIZED error, after which the pipe must close.</summary>
     public static bool IsUnauthorized(JsonElement response)
         => response.ValueKind == JsonValueKind.Object
@@ -94,7 +102,7 @@ public sealed class JsonRpcDispatcher
             || tokenElement.ValueKind != JsonValueKind.String
             || !_tokens.Validate(tokenElement.GetString()))
         {
-            return Error(id, UnauthorizedCode, "The session token is missing, stale, or invalid.", "UNAUTHORIZED");
+            return UnauthorizedError("The session token is missing, stale, or invalid.", id);
         }
 
         if (parameters.TryGetProperty("protocolVersion", out var versionElement)
