@@ -1,0 +1,19 @@
+{
+  "hostVersion": "0.1.0",
+  "protocolVersion": 1,
+  "platform": "windows",
+  "locked": false,
+  "monitors": [
+    {
+      "id": "mon_primary",
+      "name": "Primary",
+      "bounds": { "x": 0, "y": 0, "width": 2560, "height": 1440 },
+      "scale": 1.5,
+      "primary": true
+    }
+  ],
+  "permissions": {
+    "accessibility": true,
+    "screenRecording": true
+  }
+}

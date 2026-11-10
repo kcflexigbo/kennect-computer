@@ -1,0 +1,39 @@
+{
+  "window": {
+    "windowId": "w_1",
+    "title": "Feishu",
+    "processName": "Feishu.exe",
+    "pid": 73760,
+    "bounds": { "x": 0, "y": 0, "width": 1600, "height": 1000 },
+    "focused": true,
+    "minimized": false,
+    "visible": true
+  },
+  "generation": 1,
+  "focusedNodeId": "n1:2",
+  "modal": false,
+  "nodes": [
+    {
+      "nodeId": "n1:1",
+      "role": "text",
+      "name": "Conversation",
+      "identifier": "conversation-title",
+      "bounds": { "x": 0, "y": 0, "width": 1600, "height": 56 },
+      "enabled": true,
+      "focused": false,
+      "actions": []
+    },
+    {
+      "nodeId": "n1:2",
+      "role": "edit",
+      "name": "Message",
+      "identifier": "composer",
+      "bounds": { "x": 24, "y": 904, "width": 1400, "height": 48 },
+      "enabled": true,
+      "focused": true,
+      "actions": ["focus", "setValue"]
+    }
+  ],
+  "totalNodes": 2,
+  "truncated": false
+}

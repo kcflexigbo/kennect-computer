@@ -7,3 +7,12 @@ claude-provider-switch/
 # Spike build output
 spikes/**/bin/
 spikes/**/obj/
+
+# Node workspace dependencies and build output
+node_modules/
+dist/
+.mcp.json
+
+# .NET build output
+bin/
+obj/

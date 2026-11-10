@@ -1,0 +1,21 @@
+{
+  "name": "kennect-computer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP server and platform hosts for desktop computer use",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

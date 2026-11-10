@@ -1,0 +1,40 @@
+{
+  "name": "@kennect/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared protocol types and zod schemas for Kennect Computer",
+  "type": "module",
+  "main": "./dist/protocol.js",
+  "types": "./dist/protocol.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/protocol.d.ts",
+      "development": "./src/protocol.ts",
+      "import": "./dist/protocol.js"
+    },
+    "./protocol": {
+      "types": "./dist/protocol.d.ts",
+      "development": "./src/protocol.ts",
+      "import": "./dist/protocol.js"
+    },
+    "./schemas": {
+      "types": "./dist/schemas.d.ts",
+      "development": "./src/schemas.ts",
+      "import": "./dist/schemas.js"
+    },
+    "./fixtures/status.json": "./fixtures/status.json",
+    "./fixtures/snapshot.json": "./fixtures/snapshot.json"
+  },
+  "files": [
+    "dist",
+    "fixtures"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "zod": "^3.25.76"
+  }
+}
