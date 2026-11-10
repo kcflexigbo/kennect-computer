@@ -1,0 +1,335 @@
+=== Kennect Computer spike: Windows Feishu accessibility ===
+Time (UTC): 2026-11-10T07:37:38.9548393Z
+OS: Microsoft Windows 10.0.26300
+Redaction: message text, chat titles, and draft values print as <redacted: N chars>; only structural UI labels (Send, Chats, Feishu, ...) are kept.
+Mode: read-only. No patterns invoked, no values set, no input synthesized.
+
+Feishu.exe top-level windows (EnumWindows): 12
+  [0] hwnd=0x5026E title="Feishu" class="Chrome_WidgetWin_1" pid=9180 bounds=(2853,268) 1317x750 visible=True iconic=False
+  [1] hwnd=0x306B8 title="<empty>" class="Chrome_WidgetWin_0" pid=11520 bounds=(0,0) 0x0 visible=False iconic=False
+  [2] hwnd=0x106CA title="<empty>" class="Lark_StatusTrayWindow" pid=9180 bounds=(0,0) 0x0 visible=False iconic=False
+  [3] hwnd=0x10696 title="<empty>" class="crashpad_SessionEndWatcher" pid=12692 bounds=(0,0) 136x39 visible=False iconic=False
+  [4] hwnd=0x10690 title="<empty>" class="Chrome_StatusTrayWindow" pid=9180 bounds=(0,0) 0x0 visible=False iconic=False
+  [5] hwnd=0x60688 title="<empty>" class="Chrome_WidgetWin_0" pid=9180 bounds=(114,114) 1920x1117 visible=False iconic=False
+  [6] hwnd=0x2067E title="<empty>" class="Base_PowerMessageWindow" pid=9180 bounds=(0,0) 0x0 visible=False iconic=False
+  [7] hwnd=0x5021C title="<empty>" class="Chrome_WidgetWin_0" pid=9180 bounds=(0,0) 0x0 visible=False iconic=False
+  [8] hwnd=0x906B0 title="<redacted: 11 chars>" class="MSCTFIME UI" pid=9180 bounds=(0,0) 0x0 visible=False iconic=False
+  [9] hwnd=0x20672 title="<redacted: 11 chars>" class="IME" pid=9180 bounds=(0,0) 0x0 visible=False iconic=False
+  [10] hwnd=0x206CC title="<redacted: 11 chars>" class="IME" pid=11520 bounds=(0,0) 0x0 visible=False iconic=False
+  [11] hwnd=0x10698 title="<redacted: 11 chars>" class="IME" pid=12692 bounds=(0,0) 0x0 visible=False iconic=False
+
+Main window: hwnd=0x5026E pid=9180 class="Chrome_WidgetWin_1" title="Feishu" bounds=(2853,268) 1317x750
+Feishu version: 8.4.0.18
+Image: Feishu.exe
+
+Child HWNDs of main window (EnumChildWindows): 4
+  hwnd=0xA0B46 class="Chrome_RenderWidgetHostHWND" title="<redacted: 20 chars>" bounds=(2861,268) 0x0 visible=False pid=9180
+  hwnd=0x406A8 class="Chrome_RenderWidgetHostHWND" title="<redacted: 20 chars>" bounds=(3495,296) 661x708 visible=True pid=9180
+  hwnd=0x390AEC class="Chrome_RenderWidgetHostHWND" title="<redacted: 20 chars>" bounds=(3041,296) 448x708 visible=True pid=9180
+  hwnd=0x306C8 class="Intermediate D3D Window" title="<empty>" bounds=(2861,268) 1301x742 visible=True pid=11520
+ShowWindow(SW_RESTORE) + SetForegroundWindow -> False; waiting 1000 ms
+Walk attempt 1: nodes=312, namedText=16, sizedDocuments=2
+
+=== UIA tree ===
+Nodes walked: 312 (raw view, max depth 20, cap 5000), truncated=False, retriedAfterSparseTree=False
+Nodes by ControlType:
+  Group: 169
+  Button: 57 (interactive role)
+  Pane: 40
+  Text: 17 (interactive role)
+  TabItem: 15 (interactive role)
+  MenuBar: 3
+  TitleBar: 3
+  Document: 2 (interactive role)
+  Image: 2
+  ScrollBar: 1
+  Separator: 1
+  Tab: 1
+  Window: 1
+
+Interactive nodes (Task 8 vocabulary): 91 total, 87 enabled, 86 on-screen
+Enabled + on-screen interactive nodes: 82
+
+=== Full-window deep walk (supplemental: depth 60, cap 5000) ===
+Full-window deep nodes: 647, truncated=False
+  Group: 364
+  Text: 97
+  Button: 75
+  Image: 44
+  Pane: 40
+  TabItem: 15
+  MenuBar: 3
+  TitleBar: 3
+  Document: 2
+  Window: 1
+  Tab: 1
+  ScrollBar: 1
+  Separator: 1
+Full-window interactive nodes: 189, enabled=185, on-screen=151
+
+=== Task 8 default walk (supplemental: depth 12, cap 1500) ===
+Task 8 default nodes: 119, truncated=False, interactive=58, enabled=54, on-screen=58
+
+=== First 50 nodes (raw view) ===
+  #0000 d00 ct=Window name=Feishu aid=<empty> bounds=(2853,268,1317,750) enabled=True offscreen=True valuePattern=no
+  #0001 d01 ct=Pane name=<empty> aid=<empty> bounds=(2861,268,1301,742) enabled=False offscreen=False valuePattern=no
+  #0002 d01 ct=Pane name=Feishu aid=<empty> bounds=(2861,268,1301,742) enabled=True offscreen=False valuePattern=no
+  #0003 d02 ct=Pane name=<redacted: 12 chars> aid=<empty> bounds=(2861,268,1301,742) enabled=True offscreen=False valuePattern=no
+  #0004 d03 ct=Pane name=<redacted: 18 chars> aid=<empty> bounds=(2861,268,1301,742) enabled=True offscreen=False valuePattern=no
+  #0005 d04 ct=Pane name=<redacted: 10 chars> aid=<empty> bounds=(2861,268,1301,742) enabled=True offscreen=False valuePattern=no
+  #0006 d05 ct=Pane name=<redacted: 22 chars> aid=<empty> bounds=(2861,268,1301,742) enabled=True offscreen=False valuePattern=no
+  #0007 d06 ct=Pane name=<empty> aid=<empty> bounds=(0,0,0,0) enabled=True offscreen=False valuePattern=no
+  #0008 d06 ct=Pane name=<redacted: 15 chars> aid=<empty> bounds=(2861,268,1301,742) enabled=True offscreen=False valuePattern=no
+  #0009 d07 ct=Pane name=<redacted: 14 chars> aid=<empty> bounds=(3039,296,1119,712) enabled=True offscreen=False valuePattern=no
+  #0010 d08 ct=Button name=<redacted: 21 chars> aid=<empty> bounds=(0,0,0,0) enabled=False offscreen=False valuePattern=no
+  #0011 d08 ct=Button name=<redacted: 24 chars> aid=<empty> bounds=(0,0,0,0) enabled=False offscreen=False valuePattern=no
+  #0012 d08 ct=Button name=<redacted: 21 chars> aid=<empty> bounds=(0,0,0,0) enabled=True offscreen=False valuePattern=no
+  #0013 d08 ct=Button name=<redacted: 23 chars> aid=<empty> bounds=(0,0,0,0) enabled=True offscreen=False valuePattern=no
+  #0014 d08 ct=Button name=<redacted: 23 chars> aid=<empty> bounds=(0,0,0,0) enabled=True offscreen=False valuePattern=no
+  #0015 d08 ct=Button name=<redacted: 23 chars> aid=<empty> bounds=(0,0,0,0) enabled=True offscreen=False valuePattern=no
+  #0016 d08 ct=Button name=<redacted: 30 chars> aid=<empty> bounds=(0,0,0,0) enabled=True offscreen=False valuePattern=no
+  #0017 d08 ct=Button name=<redacted: 24 chars> aid=<empty> bounds=(0,0,0,0) enabled=True offscreen=False valuePattern=no
+  #0018 d08 ct=Button name=<redacted: 30 chars> aid=<empty> bounds=(0,0,0,0) enabled=True offscreen=False valuePattern=no
+  #0019 d08 ct=Button name=<redacted: 26 chars> aid=<empty> bounds=(0,0,0,0) enabled=True offscreen=False valuePattern=no
+  #0020 d08 ct=Button name=<redacted: 29 chars> aid=<empty> bounds=(0,0,0,0) enabled=True offscreen=False valuePattern=no
+  #0021 d08 ct=Button name=<redacted: 24 chars> aid=<empty> bounds=(0,0,0,0) enabled=True offscreen=False valuePattern=no
+  #0022 d08 ct=Button name=<redacted: 23 chars> aid=<empty> bounds=(0,0,0,0) enabled=True offscreen=False valuePattern=no
+  #0023 d08 ct=Button name=<redacted: 24 chars> aid=<empty> bounds=(0,0,0,0) enabled=True offscreen=False valuePattern=no
+  #0024 d08 ct=Button name=<redacted: 6 chars> aid=<empty> bounds=(0,0,0,0) enabled=True offscreen=False valuePattern=no
+  #0025 d08 ct=Pane name=<redacted: 24 chars> aid=<empty> bounds=(3041,296,448,708) enabled=True offscreen=False valuePattern=no
+  #0026 d09 ct=Pane name=<redacted: 20 chars> aid=4937 bounds=(3041,296,448,708) enabled=True offscreen=True valuePattern=no
+  #0027 d10 ct=Document name=<redacted: 9 chars> aid=RootWebArea bounds=(3041,296,448,708) enabled=True offscreen=False valuePattern=yes readOnly=True value=<redacted: 119 chars>
+  #0028 d11 ct=Group name=<empty> aid=root bounds=(3041,296,448,708) enabled=True offscreen=False valuePattern=no
+  #0029 d12 ct=Group name=<empty> aid=<empty> bounds=(3041,296,448,708) enabled=True offscreen=False valuePattern=no
+  #0030 d12 ct=Group name=<empty> aid=<empty> bounds=(3041,296,448,708) enabled=True offscreen=False valuePattern=no
+  #0031 d13 ct=Group name=<empty> aid=<empty> bounds=(3041,296,448,48) enabled=True offscreen=False valuePattern=no
+  #0032 d14 ct=Button name=<empty> aid=<empty> bounds=(3053,308,24,24) enabled=True offscreen=False valuePattern=no
+  #0033 d15 ct=Image name=<empty> aid=<empty> bounds=(3057,312,16,16) enabled=True offscreen=False valuePattern=no
+  #0034 d14 ct=Group name=<empty> aid=<empty> bounds=(3081,308,40,24) enabled=True offscreen=False valuePattern=no
+  #0035 d15 ct=Text name=Chats aid=<empty> bounds=(3081,310,40,19) enabled=True offscreen=False valuePattern=no
+  #0036 d13 ct=Group name=<empty> aid=<empty> bounds=(3041,344,448,660) enabled=True offscreen=False valuePattern=no
+  #0037 d14 ct=Group name=<empty> aid=<empty> bounds=(3041,344,448,61) enabled=True offscreen=False valuePattern=no
+  #0038 d15 ct=Group name=<empty> aid=<empty> bounds=(3041,344,448,61) enabled=True offscreen=False valuePattern=no
+  #0039 d16 ct=Group name=<empty> aid=<empty> bounds=(3041,344,1,1) enabled=True offscreen=False valuePattern=no
+  #0040 d17 ct=Group name=<empty> aid=<empty> bounds=(3041,344,10,10) enabled=True offscreen=False valuePattern=no
+  #0041 d16 ct=Group name=<empty> aid=<empty> bounds=(3041,344,448,61) enabled=True offscreen=False valuePattern=no
+  #0042 d17 ct=Group name=<empty> aid=<empty> bounds=(3041,344,448,61) enabled=True offscreen=False valuePattern=no
+  #0043 d18 ct=Group name=<redacted: 18 chars> aid=<empty> bounds=(3041,344,448,61) enabled=True offscreen=False valuePattern=no
+  #0044 d19 ct=Group name=<empty> aid=<empty> bounds=(3048,344,47,59) enabled=True offscreen=False valuePattern=no
+  #0045 d20 ct=Group name=<empty> aid=<empty> bounds=(3048,347,47,54) enabled=True offscreen=False valuePattern=no
+  #0046 d14 ct=Group name=<empty> aid=<empty> bounds=(3041,415,448,589) enabled=True offscreen=False valuePattern=no
+  #0047 d15 ct=Group name=<empty> aid=<empty> bounds=(3041,1030,448,1) enabled=True offscreen=True valuePattern=no
+  #0048 d15 ct=Group name=<empty> aid=<empty> bounds=(3041,215,448,62) enabled=True offscreen=True valuePattern=no
+  #0049 d16 ct=Group name=<empty> aid=<empty> bounds=(3041,215,448,62) enabled=True offscreen=True valuePattern=no
+
+=== Candidate nodes ===
+Test conversation: <redacted: 23 chars> (source: header Text in top band)
+Nodes whose Name contains the test conversation name: 1
+  #0069 d20 ct=Text name=<redacted: 23 chars> aid=<empty> bounds=(3197,312,275,14) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+
+Edit/Document nodes: 2
+  #0027 d10 ct=Document name=<redacted: 9 chars> aid=RootWebArea bounds=(3041,296,448,708) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|Scroll [#10004]|ScrollItem [#10017]|Text [#10014]|TextEdit [#10032]|Value [#10002] valuePattern=yes readOnly=True value=<redacted: 119 chars> textPattern=yes textLen=1242 textLines=88 legacy=yes legacyNameLen=9 legacyValueLen=119 bottomBand=False
+  #0210 d10 ct=Document name=<redacted: 14 chars> aid=RootWebArea bounds=(3495,296,661,708) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|Scroll [#10004]|ScrollItem [#10017]|Text [#10014]|TextEdit [#10032]|Value [#10002] valuePattern=yes readOnly=True value=<redacted: 124 chars> textPattern=yes textLen=787 textLines=81 legacy=yes legacyNameLen=14 legacyValueLen=124 bottomBand=False
+
+Nodes whose Name is Send/发送: 0
+Additional nodes with AutomationId containing "send": 0
+
+Chat-list candidates (ListItem/TreeItem/Text/named Group in left pane): 17
+  #0035 d15 ct=Text name=Chats aid=<empty> bounds=(3081,310,40,19) enabled=True offscreen=False selected=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0043 d18 ct=Group name=<redacted: 18 chars> aid=<empty> bounds=(3041,344,448,61) enabled=True offscreen=False selected=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029]
+  #0056 d20 ct=Text name=<redacted: 14 chars> aid=<empty> bounds=(3105,250,168,14) enabled=True offscreen=True selected=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0067 d20 ct=Text name=<redacted: 16 chars> aid=<empty> bounds=(3105,312,85,14) enabled=True offscreen=True selected=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0068 d20 ct=Text name=<redacted: 2 chars> aid=<empty> bounds=(3189,312,9,14) enabled=True offscreen=True selected=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0069 d20 ct=Text name=<redacted: 23 chars> aid=<empty> bounds=(3197,312,275,14) enabled=True offscreen=True selected=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0081 d20 ct=Text name=<redacted: 5 chars> aid=<empty> bounds=(3124,374,60,14) enabled=True offscreen=True selected=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0092 d20 ct=Text name=<redacted: 21 chars> aid=<empty> bounds=(3105,436,109,14) enabled=True offscreen=False selected=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0103 d20 ct=Text name=<redacted: 22 chars> aid=<empty> bounds=(3105,498,123,14) enabled=True offscreen=False selected=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0113 d20 ct=Text name=<redacted: 16 chars> aid=<empty> bounds=(3105,560,192,14) enabled=True offscreen=False selected=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0123 d20 ct=Text name=<redacted: 52 chars> aid=<empty> bounds=(3105,622,358,14) enabled=True offscreen=False selected=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0134 d20 ct=Text name=<redacted: 100 chars> aid=<empty> bounds=(3105,684,366,14) enabled=True offscreen=False selected=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0145 d20 ct=Text name=<redacted: 40 chars> aid=<empty> bounds=(3105,746,232,14) enabled=True offscreen=False selected=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0155 d20 ct=Text name=<redacted: 17 chars> aid=<empty> bounds=(3105,808,204,14) enabled=True offscreen=False selected=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0165 d20 ct=Text name=<redacted: 63 chars> aid=<empty> bounds=(3105,870,363,14) enabled=True offscreen=False selected=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0176 d20 ct=Text name=<redacted: 32 chars> aid=<empty> bounds=(3105,932,176,14) enabled=True offscreen=False selected=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0187 d20 ct=Text name=<redacted: 92 chars> aid=<empty> bounds=(3105,994,362,14) enabled=True offscreen=False selected=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+
+Message-region container candidates (central-right, >25% width/height): 17
+  #208 d8 ct=Pane aid=<empty> bounds=(3495,296,661,708) patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]
+  #209 d9 ct=Pane aid=5191 bounds=(3495,296,661,708) patterns=ItemContainer [#10019]|LegacyIAccessible [#10018]|Scroll [#10004]|ScrollItem [#10017]
+  #210 d10 ct=Document aid=RootWebArea bounds=(3495,296,661,708) patterns=LegacyIAccessible [#10018]|Scroll [#10004]|ScrollItem [#10017]|Text [#10014]|TextEdit [#10032]|Value [#10002]
+  #211 d11 ct=Group aid=<empty> bounds=(3495,296,661,708) patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029]
+  #212 d12 ct=Group aid=root bounds=(3495,296,661,708) patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029]
+  #213 d13 ct=Group aid=messenger bounds=(3495,296,661,708) patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029]
+  #214 d14 ct=Group aid=<empty> bounds=(3495,296,661,708) patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029]
+  #215 d15 ct=Group aid=<empty> bounds=(3495,296,661,708) patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029]
+Chosen message region: #210 Document bounds=(3495,296,661,708)
+Message region #210 Document: descendants=23, Text=0, ListItem=0, namedNodes=0, namedText=0
+Sample Text nodes in message region:
+Sample ListItem nodes in message region:
+Sample named non-Text nodes in message region (message text may hide in Name):
+Message-item candidates: 0
+
+=== Deep walk under message region #210 (supplemental: depth 60, cap 5000) ===
+Deep nodes: 255, truncated=False
+  Group: 169
+  Text: 45
+  Image: 22
+  Button: 18
+  Document: 1
+Named nodes in deep walk: 52
+  #0000 d00 ct=Document name=<redacted: 14 chars> aid=RootWebArea bounds=(3495,296,661,708) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|Scroll [#10004]|ScrollItem [#10017]|Text [#10014]|TextEdit [#10032]|Value [#10002] valuePattern=yes readOnly=True value=<redacted: 124 chars>
+  #0018 d14 ct=Text name=<redacted: 41 chars> aid=<empty> bounds=(3555,310,311,19) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0021 d15 ct=Button name=<redacted: 1 chars> aid=<empty> bounds=(3872,308,31,24) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0023 d16 ct=Text name=<redacted: 1 chars> aid=<empty> bounds=(3892,313,7,14) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0025 d15 ct=Button name=<redacted: 1 chars> aid=<empty> bounds=(3908,308,32,24) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0027 d16 ct=Text name=<redacted: 1 chars> aid=<empty> bounds=(3928,313,8,14) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0031 d16 ct=Button name=<redacted: 13 chars> aid=<empty> bounds=(3959,308,24,24) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0032 d17 ct=Image name=<redacted: 13 chars> aid=<empty> bounds=(3963,312,16,16) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0050 d15 ct=Text name=<redacted: 8 chars> aid=<empty> bounds=(3559,339,31,12) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0072 d25 ct=Text name=<redacted: 16 chars> aid=<empty> bounds=(3557,-332,85,14) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0074 d25 ct=Text name=<redacted: 3 chars> aid=<empty> bounds=(3649,-331,20,12) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0081 d28 ct=Text name=<redacted: 26 chars> aid=<empty> bounds=(3594,-295,368,19) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0083 d28 ct=Text name=<redacted: 22 chars> aid=<empty> bounds=(3594,-267,275,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0098 d35 ct=Text name=<redacted: 19 chars> aid=<empty> bounds=(3570,-187,247,19) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0101 d35 ct=Text name=<redacted: 11 chars> aid=<empty> bounds=(3570,-153,136,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0102 d35 ct=Text name=<redacted: 24 chars> aid=<empty> bounds=(3705,-153,337,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0103 d35 ct=Text name=<redacted: 1 chars> aid=<empty> bounds=(0,0,0,0) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0104 d35 ct=Text name=<redacted: 1 chars> aid=<empty> bounds=(3570,-129,10,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0105 d35 ct=Text name=<redacted: 20 chars> aid=<empty> bounds=(3579,-129,246,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0108 d35 ct=Text name=<redacted: 10 chars> aid=<empty> bounds=(3570,-97,136,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0109 d35 ct=Text name=<redacted: 24 chars> aid=<empty> bounds=(3705,-97,337,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0110 d35 ct=Text name=<redacted: 1 chars> aid=<empty> bounds=(0,0,0,0) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0111 d35 ct=Text name=<redacted: 2 chars> aid=<empty> bounds=(3570,-73,15,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0112 d35 ct=Text name=<redacted: 21 chars> aid=<empty> bounds=(3584,-73,260,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0118 d32 ct=Text name=<redacted: 3 chars> aid=<empty> bounds=(3692,-33,28,19) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0119 d32 ct=Text name=<redacted: 22 chars> aid=<empty> bounds=(3719,-33,264,19) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0122 d32 ct=Text name=<redacted: 36 chars> aid=<empty> bounds=(3585,-7,505,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0124 d28 ct=Button name=<redacted: 17 chars> aid=<empty> bounds=(3570,30,535,32) enabled=True offscreen=True patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0130 d21 ct=Text name=<redacted: 7 chars> aid=<empty> bounds=(3803,92,45,14) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0141 d25 ct=Text name=<redacted: 16 chars> aid=<empty> bounds=(3557,145,85,14) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0143 d25 ct=Text name=<redacted: 3 chars> aid=<empty> bounds=(3649,146,20,12) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0151 d28 ct=Text name=<redacted: 23 chars> aid=<empty> bounds=(3594,182,368,19) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0157 d32 ct=Text name=<redacted: 22 chars> aid=<empty> bounds=(3701,232,273,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0179 d32 ct=Text name=<redacted: 12 chars> aid=<empty> bounds=(3712,785,159,18) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0180 d32 ct=Text name=<redacted: 4 chars> aid=<empty> bounds=(3870,785,37,18) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0181 d32 ct=Text name=<redacted: 4 chars> aid=<empty> bounds=(3906,785,57,18) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0182 d32 ct=Text name=<redacted: 1 chars> aid=<empty> bounds=(0,0,0,0) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0183 d32 ct=Text name=<redacted: 2 chars> aid=<empty> bounds=(3592,809,29,18) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0184 d32 ct=Text name=<redacted: 14 chars> aid=<empty> bounds=(3620,809,197,18) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0185 d32 ct=Text name=<redacted: 6 chars> aid=<empty> bounds=(3816,809,85,18) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+Deep Edit/Document nodes: 1
+  #0000 d00 ct=Document name=<redacted: 14 chars> aid=RootWebArea bounds=(3495,296,661,708) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|Scroll [#10004]|ScrollItem [#10017]|Text [#10014]|TextEdit [#10032]|Value [#10002] valuePattern=yes readOnly=True value=<redacted: 124 chars> textPattern=yes textLen=787 textLines=81 legacy=yes legacyNameLen=14 legacyValueLen=124
+Deep Send/发送 nodes: 0
+Deep Text nodes: 45, named=45, lengths min=1 max=49 total=571
+  #0018 d14 ct=Text name=<redacted: 41 chars> aid=<empty> bounds=(3555,310,311,19) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0023 d16 ct=Text name=<redacted: 1 chars> aid=<empty> bounds=(3892,313,7,14) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0027 d16 ct=Text name=<redacted: 1 chars> aid=<empty> bounds=(3928,313,8,14) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0050 d15 ct=Text name=<redacted: 8 chars> aid=<empty> bounds=(3559,339,31,12) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0072 d25 ct=Text name=<redacted: 16 chars> aid=<empty> bounds=(3557,-332,85,14) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0074 d25 ct=Text name=<redacted: 3 chars> aid=<empty> bounds=(3649,-331,20,12) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0081 d28 ct=Text name=<redacted: 26 chars> aid=<empty> bounds=(3594,-295,368,19) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0083 d28 ct=Text name=<redacted: 22 chars> aid=<empty> bounds=(3594,-267,275,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0098 d35 ct=Text name=<redacted: 19 chars> aid=<empty> bounds=(3570,-187,247,19) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0101 d35 ct=Text name=<redacted: 11 chars> aid=<empty> bounds=(3570,-153,136,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0102 d35 ct=Text name=<redacted: 24 chars> aid=<empty> bounds=(3705,-153,337,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0103 d35 ct=Text name=<redacted: 1 chars> aid=<empty> bounds=(0,0,0,0) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0104 d35 ct=Text name=<redacted: 1 chars> aid=<empty> bounds=(3570,-129,10,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0105 d35 ct=Text name=<redacted: 20 chars> aid=<empty> bounds=(3579,-129,246,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0108 d35 ct=Text name=<redacted: 10 chars> aid=<empty> bounds=(3570,-97,136,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0109 d35 ct=Text name=<redacted: 24 chars> aid=<empty> bounds=(3705,-97,337,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0110 d35 ct=Text name=<redacted: 1 chars> aid=<empty> bounds=(0,0,0,0) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0111 d35 ct=Text name=<redacted: 2 chars> aid=<empty> bounds=(3570,-73,15,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0112 d35 ct=Text name=<redacted: 21 chars> aid=<empty> bounds=(3584,-73,260,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+  #0118 d32 ct=Text name=<redacted: 3 chars> aid=<empty> bounds=(3692,-33,28,19) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032]
+Deep nodes supporting TextEdit pattern: 47
+  #0000 d00 ct=Document name=<redacted: 14 chars> aid=RootWebArea bounds=(3495,296,661,708) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|Scroll [#10004]|ScrollItem [#10017]|Text [#10014]|TextEdit [#10032]|Value [#10002] valuePattern=yes readOnly=True value=<redacted: 124 chars>
+  #0018 d14 ct=Text name=<redacted: 41 chars> aid=<empty> bounds=(3555,310,311,19) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0023 d16 ct=Text name=<redacted: 1 chars> aid=<empty> bounds=(3892,313,7,14) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0027 d16 ct=Text name=<redacted: 1 chars> aid=<empty> bounds=(3928,313,8,14) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0050 d15 ct=Text name=<redacted: 8 chars> aid=<empty> bounds=(3559,339,31,12) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0072 d25 ct=Text name=<redacted: 16 chars> aid=<empty> bounds=(3557,-332,85,14) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0074 d25 ct=Text name=<redacted: 3 chars> aid=<empty> bounds=(3649,-331,20,12) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0081 d28 ct=Text name=<redacted: 26 chars> aid=<empty> bounds=(3594,-295,368,19) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0083 d28 ct=Text name=<redacted: 22 chars> aid=<empty> bounds=(3594,-267,275,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0098 d35 ct=Text name=<redacted: 19 chars> aid=<empty> bounds=(3570,-187,247,19) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0101 d35 ct=Text name=<redacted: 11 chars> aid=<empty> bounds=(3570,-153,136,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0102 d35 ct=Text name=<redacted: 24 chars> aid=<empty> bounds=(3705,-153,337,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0103 d35 ct=Text name=<redacted: 1 chars> aid=<empty> bounds=(0,0,0,0) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0104 d35 ct=Text name=<redacted: 1 chars> aid=<empty> bounds=(3570,-129,10,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0105 d35 ct=Text name=<redacted: 20 chars> aid=<empty> bounds=(3579,-129,246,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0108 d35 ct=Text name=<redacted: 10 chars> aid=<empty> bounds=(3570,-97,136,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0109 d35 ct=Text name=<redacted: 24 chars> aid=<empty> bounds=(3705,-97,337,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0110 d35 ct=Text name=<redacted: 1 chars> aid=<empty> bounds=(0,0,0,0) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0111 d35 ct=Text name=<redacted: 2 chars> aid=<empty> bounds=(3570,-73,15,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0112 d35 ct=Text name=<redacted: 21 chars> aid=<empty> bounds=(3584,-73,260,17) enabled=True offscreen=True patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+Deep bottom-band nodes (y > 72% of window): 51
+  #0183 d32 ct=Text name=<redacted: 2 chars> aid=<empty> bounds=(3592,809,29,18) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0184 d32 ct=Text name=<redacted: 14 chars> aid=<empty> bounds=(3620,809,197,18) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0185 d32 ct=Text name=<redacted: 6 chars> aid=<empty> bounds=(3816,809,85,18) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0186 d32 ct=Text name=<redacted: 13 chars> aid=<empty> bounds=(3900,809,183,18) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0188 d32 ct=Text name=<redacted: 25 chars> aid=<empty> bounds=(3666,833,343,18) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0189 d27 ct=Group name=<empty> aid=<empty> bounds=(3570,862,535,33) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0190 d28 ct=Group name=<empty> aid=<empty> bounds=(3570,862,535,33) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0191 d29 ct=Group name=<empty> aid=<empty> bounds=(3570,862,535,33) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0192 d30 ct=Group name=<empty> aid=<empty> bounds=(3570,862,535,33) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0193 d31 ct=Button name=<redacted: 11 chars> aid=<empty> bounds=(3570,862,535,33) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0198 d19 ct=Group name=<empty> aid=<empty> bounds=(3495,909,661,17) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0060 d18 ct=Group name=<empty> aid=<empty> bounds=(3495,925,661,1) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0200 d13 ct=Group name=<empty> aid=<empty> bounds=(3515,934,621,48) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0237 d14 ct=Group name=<empty> aid=<empty> bounds=(3516,935,349,34) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0212 d14 ct=Group name=<empty> aid=<empty> bounds=(3877,945,26,26) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0213 d15 ct=Button name=<empty> aid=<empty> bounds=(3877,945,26,26) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0215 d14 ct=Group name=<empty> aid=<empty> bounds=(3907,945,26,26) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0216 d15 ct=Group name=<empty> aid=<empty> bounds=(3907,945,26,26) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0217 d16 ct=Button name=<empty> aid=<empty> bounds=(3907,945,26,26) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0219 d14 ct=Group name=<empty> aid=<empty> bounds=(3937,945,26,26) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0220 d15 ct=Button name=<empty> aid=<empty> bounds=(3937,945,26,26) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0222 d14 ct=Group name=<empty> aid=<empty> bounds=(3967,945,34,26) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0223 d15 ct=Button name=<empty> aid=<empty> bounds=(3967,945,34,26) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0226 d14 ct=Group name=<empty> aid=<empty> bounds=(4005,945,26,26) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0227 d15 ct=Group name=<empty> aid=<empty> bounds=(4005,945,26,26) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0228 d16 ct=Button name=<empty> aid=<empty> bounds=(4005,945,26,26) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0230 d14 ct=Group name=<empty> aid=<empty> bounds=(4035,945,26,26) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0231 d15 ct=Button name=<empty> aid=<empty> bounds=(4035,945,26,26) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0233 d14 ct=Button name=<empty> aid=<empty> bounds=(4069,945,36,26) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0235 d14 ct=Button name=<empty> aid=<empty> bounds=(4105,945,20,26) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0201 d14 ct=Group name=<empty> aid=<empty> bounds=(3524,947,353,34) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0202 d15 ct=Group name=<empty> aid=<empty> bounds=(3528,947,338,22) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0203 d16 ct=Group name=<empty> aid=<empty> bounds=(3528,947,338,22) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0238 d15 ct=Group name=<empty> aid=<empty> bounds=(3528,947,349,34) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|Scroll [#10004]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0239 d16 ct=Group name=<empty> aid=<empty> bounds=(3528,947,5000,5000) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0204 d17 ct=Group name=<empty> aid=<empty> bounds=(3530,947,129,22) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0208 d17 ct=Text name=<redacted: 49 chars> aid=<empty> bounds=(3666,949,199,17) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0214 d16 ct=Image name=<empty> aid=<empty> bounds=(3881,949,18,18) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0218 d17 ct=Image name=<empty> aid=<empty> bounds=(3911,949,18,18) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0221 d16 ct=Image name=<empty> aid=<empty> bounds=(3941,949,18,18) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0224 d16 ct=Image name=<empty> aid=<empty> bounds=(3971,949,18,18) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0225 d16 ct=Image name=<empty> aid=<empty> bounds=(3989,949,8,18) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0229 d17 ct=Image name=<empty> aid=<empty> bounds=(4009,949,18,18) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0232 d16 ct=Image name=<empty> aid=<empty> bounds=(4039,949,18,18) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0234 d15 ct=Image name=<empty> aid=<empty> bounds=(4078,949,18,18) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0205 d18 ct=Text name=<redacted: 5 chars> aid=<empty> bounds=(3536,951,28,14) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0206 d18 ct=Text name=<redacted: 9 chars> aid=<empty> bounds=(3566,951,47,14) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0207 d18 ct=Text name=<redacted: 8 chars> aid=<empty> bounds=(3615,951,38,14) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+  #0236 d15 ct=Image name=<empty> aid=<empty> bounds=(4111,954,8,8) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0240 d13 ct=Group name=<empty> aid=<empty> bounds=(3999,984,137,13) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029] valuePattern=no
+  #0241 d14 ct=Text name=<redacted: 31 chars> aid=<empty> bounds=(3999,984,137,12) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no
+Bottom-band Buttons with InvokePattern: 9
+  #0193 d31 ct=Button name=<redacted: 11 chars> aid=<empty> bounds=(3570,862,535,33) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029]
+  #0213 d15 ct=Button name=<empty> aid=<empty> bounds=(3877,945,26,26) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029]
+  #0217 d16 ct=Button name=<empty> aid=<empty> bounds=(3907,945,26,26) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029]
+  #0220 d15 ct=Button name=<empty> aid=<empty> bounds=(3937,945,26,26) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029]
+  #0223 d15 ct=Button name=<empty> aid=<empty> bounds=(3967,945,34,26) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029]
+  #0228 d16 ct=Button name=<empty> aid=<empty> bounds=(4005,945,26,26) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029]
+  #0231 d15 ct=Button name=<empty> aid=<empty> bounds=(4035,945,26,26) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029]
+  #0233 d14 ct=Button name=<empty> aid=<empty> bounds=(4069,945,36,26) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029]
+  #0235 d14 ct=Button name=<empty> aid=<empty> bounds=(4105,945,20,26) enabled=True offscreen=False patterns=Invoke [#10000]|LegacyIAccessible [#10018]|ScrollItem [#10017]|TextChild [#10029]
+Bottom-band non-Text/Document nodes supporting TextEdit: 1
+  #0202 d15 ct=Group name=<empty> aid=<empty> bounds=(3528,947,338,22) enabled=True offscreen=False patterns=LegacyIAccessible [#10018]|ScrollItem [#10017]|Text [#10014]|TextChild [#10029]|TextEdit [#10032] valuePattern=no textPattern=yes textLen=108 textLines=7
+Bottom-band nodes supporting ValuePattern: 0
+
+Deep summary for other Document #27: nodes=270, Text=51, namedText=51, lengths min=2 max=100 total=883, Button=1, Edit=0, Send=0
+
+Screenshot: PrintWindow(PW_RENDERFULLCONTENT)=True, size=1317x750, mostlyBlack=False, path=docs\spikes\windows-feishu.png
+
+Done. Read-only spike: no patterns invoked, no values set, no input synthesized.

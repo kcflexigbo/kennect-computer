@@ -3,3 +3,7 @@ screenshots/
 
 # Separate project with its own repository
 claude-provider-switch/
+
+# Spike build output
+spikes/**/bin/
+spikes/**/obj/
