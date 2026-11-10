@@ -28,4 +28,11 @@ public sealed record RawWindow(nint Hwnd, int Pid, string Title, string ProcessN
 public interface IWindowApi
 {
     IReadOnlyList<RawWindow> GetTopLevelWindows();
+
+    /// <summary>
+    /// Reads a single window's current native identity, or null when the handle
+    /// is no longer a window. Used to invalidate registered IDs before they are
+    /// acted on.
+    /// </summary>
+    RawWindow? TryGetWindow(nint hwnd);
 }

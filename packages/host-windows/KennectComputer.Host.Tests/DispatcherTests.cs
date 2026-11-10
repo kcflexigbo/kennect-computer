@@ -59,7 +59,7 @@ public sealed class DispatcherTests
             tokens,
             new FakeMonitorProvider(),
             new FakeDesktopState(),
-            new WindowEnumerator(api, new WindowRegistry()));
+            new WindowEnumerator(api, new WindowRegistry(api)));
         var token = tokens.Rotate();
 
         var hello = await dispatcher.HandleAsync(JsonDocument.Parse($$$"""{"jsonrpc":"2.0","id":1,"method":"hello","params":{"token":"{{{token}}}","protocolVersion":1,"clientName":"test"}}""").RootElement);
@@ -77,11 +77,14 @@ public sealed class DispatcherTests
     }
 
     private static JsonRpcDispatcher NewDispatcher(TokenStore tokens, FakeDesktopState? desktop = null)
-        => new(
+    {
+        var api = new FakeWindowApi();
+        return new(
             tokens,
             new FakeMonitorProvider(),
             desktop ?? new FakeDesktopState(),
-            new WindowEnumerator(new FakeWindowApi(), new WindowRegistry()));
+            new WindowEnumerator(api, new WindowRegistry(api)));
+    }
 
     private static string NewTempDir()
     {

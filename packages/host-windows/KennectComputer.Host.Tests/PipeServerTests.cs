@@ -130,11 +130,12 @@ public sealed class PipeServerTests
             var tokens = TokenStore.CreateForTests(stateDirectory);
             var token = tokens.Rotate();
             var pipeName = "kennect-computer-test-" + Guid.NewGuid().ToString("N");
+            var api = new FakeWindowApi();
             var dispatcher = new JsonRpcDispatcher(
                 tokens,
                 new FakeMonitorProvider(),
                 new FakeDesktopState(),
-                new WindowEnumerator(new FakeWindowApi(), new WindowRegistry()));
+                new WindowEnumerator(api, new WindowRegistry(api)));
             var server = new PipeServer(pipeName, tokens, dispatcher);
             var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             var run = server.RunAsync(cancellation.Token);

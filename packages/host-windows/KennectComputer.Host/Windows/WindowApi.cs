@@ -26,28 +26,45 @@ public sealed class WindowApi : IWindowApi
 
         EnumWindowsProc callback = (hwnd, _) =>
         {
-            GetWindowThreadProcessId(hwnd, out var pid);
-            windows.Add(new RawWindow(
-                hwnd,
-                (int)pid,
-                GetWindowTitle(hwnd),
-                GetProcessName(pid, processNames),
-                GetBounds(hwnd))
-            {
-                ClassName = GetWindowClass(hwnd),
-                Visible = IsWindowVisible(hwnd),
-                Cloaked = IsCloaked(hwnd),
-                Minimized = IsIconic(hwnd),
-                Focused = hwnd == foreground,
-                ExStyle = GetExtendedStyle(hwnd),
-            });
-
+            windows.Add(ReadWindow(hwnd, foreground, processNames));
             return true;
         };
 
         EnumWindows(callback, 0);
         GC.KeepAlive(callback);
         return windows;
+    }
+
+    public RawWindow? TryGetWindow(nint hwnd)
+    {
+        if (hwnd == 0 || !IsWindow(hwnd))
+        {
+            return null;
+        }
+
+        return ReadWindow(hwnd, GetForegroundWindow(), new Dictionary<uint, string>());
+    }
+
+    private static RawWindow ReadWindow(
+        nint hwnd,
+        nint foreground,
+        Dictionary<uint, string> processNames)
+    {
+        GetWindowThreadProcessId(hwnd, out var pid);
+        return new RawWindow(
+            hwnd,
+            (int)pid,
+            GetWindowTitle(hwnd),
+            GetProcessName(pid, processNames),
+            GetBounds(hwnd))
+        {
+            ClassName = GetWindowClass(hwnd),
+            Visible = IsWindowVisible(hwnd),
+            Cloaked = IsCloaked(hwnd),
+            Minimized = IsIconic(hwnd),
+            Focused = hwnd == foreground,
+            ExStyle = GetExtendedStyle(hwnd),
+        };
     }
 
     private static Rect GetBounds(nint hwnd)
@@ -167,6 +184,10 @@ public sealed class WindowApi : IWindowApi
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint GetWindowThreadProcessId(nint hwnd, out uint processId);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindow(nint hwnd);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

@@ -21,7 +21,8 @@ internal static class Program
         tokens.Rotate();
         tokens.WriteSessionInfo(pipeName);
 
-        var windows = new WindowEnumerator(new WindowApi(), new WindowRegistry());
+        var windowApi = new WindowApi();
+        var windows = new WindowEnumerator(windowApi, new WindowRegistry(windowApi));
         var dispatcher = new JsonRpcDispatcher(tokens, new WindowsMonitorProvider(), new DesktopState(), windows);
         var server = new PipeServer(pipeName, tokens, dispatcher);
 

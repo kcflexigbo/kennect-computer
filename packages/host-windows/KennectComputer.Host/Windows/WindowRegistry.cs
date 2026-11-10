@@ -25,15 +25,23 @@ public sealed class ResolvedWindow
 ///
 /// The same window keeps its ID across enumerations; a window whose native
 /// identity changed (process restart, handle reuse) is marked dead and gets a
-/// new ID. Dead IDs never resolve again, so a stale selection cannot drift to
-/// another window.
+/// new ID. Every resolve re-checks the live native window (handle, PID, process,
+/// and class), so an ID cannot outlive the window it was issued for even when no
+/// new enumeration has run since. Dead IDs are removed and never resolve again,
+/// so a stale selection cannot drift to another window.
 /// </summary>
 public sealed class WindowRegistry
 {
     private readonly object _gate = new();
     private readonly Dictionary<string, Entry> _byId = new(StringComparer.Ordinal);
     private readonly Dictionary<nint, Entry> _byHwnd = [];
+    private readonly IWindowApi _api;
     private long _nextId;
+
+    public WindowRegistry(IWindowApi api)
+    {
+        _api = api ?? throw new ArgumentNullException(nameof(api));
+    }
 
     public WindowInfo Register(RawWindow window)
     {
@@ -51,7 +59,7 @@ public sealed class WindowRegistry
 
                 // The handle now belongs to a different process or class; the old
                 // ID must not resolve to the new window.
-                existing.Alive = false;
+                Invalidate(existing);
             }
 
             var entry = new Entry($"w_{++_nextId}", window);
@@ -71,15 +79,27 @@ public sealed class WindowRegistry
 
         lock (_gate)
         {
-            if (_byId.TryGetValue(windowId, out var entry) && entry.Alive)
+            if (!_byId.TryGetValue(windowId, out var entry) || !entry.Alive)
             {
+                resolved = null;
+                return false;
+            }
+
+            // The window may have died or the handle may have been recycled
+            // since the last enumeration. Re-read the native identity before
+            // handing it back so callers never act on a stale mapping.
+            var current = _api.TryGetWindow(entry.Hwnd);
+            if (current is not null && entry.HasSameIdentity(current))
+            {
+                entry.Update(current);
                 resolved = entry.ToResolvedWindow();
                 return true;
             }
-        }
 
-        resolved = null;
-        return false;
+            Invalidate(entry);
+            resolved = null;
+            return false;
+        }
     }
 
     /// <summary>Simulates the OS reporting that a window died.</summary>
@@ -89,8 +109,19 @@ public sealed class WindowRegistry
         {
             if (_byHwnd.Remove(hwnd, out var entry))
             {
-                entry.Alive = false;
+                Invalidate(entry);
             }
+        }
+    }
+
+    /// <summary>Removes a dead entry so its ID never resolves again.</summary>
+    private void Invalidate(Entry entry)
+    {
+        entry.Alive = false;
+        _byId.Remove(entry.WindowId);
+        if (_byHwnd.TryGetValue(entry.Hwnd, out var mapped) && ReferenceEquals(mapped, entry))
+        {
+            _byHwnd.Remove(entry.Hwnd);
         }
     }
 
