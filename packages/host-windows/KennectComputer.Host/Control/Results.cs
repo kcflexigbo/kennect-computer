@@ -84,10 +84,17 @@ public sealed class SelectResult
 
     public IReadOnlyList<WindowCandidate>? Candidates { get; init; }
 
+    /// <summary>
+    /// A caller-facing explanation for failures that need more detail than the
+    /// generic protocol message (for example, an unresolvable app path).
+    /// </summary>
+    public string? Message { get; init; }
+
     public static SelectResult Success(WindowInfo window) => new() { Window = window };
 
     public static SelectResult Failed(
         ErrorCode error,
-        IReadOnlyList<WindowCandidate>? candidates = null)
-        => new() { Error = error, Candidates = candidates };
+        IReadOnlyList<WindowCandidate>? candidates = null,
+        string? message = null)
+        => new() { Error = error, Candidates = candidates, Message = message };
 }

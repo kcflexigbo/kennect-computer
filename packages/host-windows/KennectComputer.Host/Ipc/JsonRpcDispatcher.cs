@@ -266,7 +266,8 @@ public sealed class JsonRpcDispatcher
             return Error(
                 id,
                 RpcCodeFor(error),
-                SelectErrorMessages.Describe(error, result.Candidates?.Count ?? 0),
+                result.Message
+                    ?? SelectErrorMessages.Describe(error, result.Candidates?.Count ?? 0),
                 error.ToProtocolCode(),
                 result.Candidates);
         }

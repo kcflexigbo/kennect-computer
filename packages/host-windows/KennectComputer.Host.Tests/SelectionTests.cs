@@ -98,6 +98,45 @@ public sealed class SelectionTests
     }
 
     [Fact]
+    public async Task AnUnresolvableProcessPathIsDeniedWithoutFocusing()
+    {
+        // R27: MainModule is inaccessible for elevated/protected processes. The
+        // process name must never be passed to authorization as if it were a path.
+        var raw = NotepadWindow();
+        var api = new FakeWindowApi(raw);
+        var registry = new WindowRegistry(api);
+        var info = registry.Register(raw);
+        var selection = new SelectionStore();
+        var focus = new FakeWin32();
+        var authorization = new FakeAuthorization(AuthorizationDecision.AllowSession);
+
+        var result = await NewService(
+                api,
+                registry,
+                selection,
+                focus,
+                authorization,
+                processPathResolver: _ => null)
+            .SelectAsync(info.WindowId, default);
+
+        Assert.Equal(ErrorCode.AuthorizationDenied, result.Error);
+        Assert.Null(result.Window);
+        Assert.Null(selection.Selected);
+        Assert.Equal(0, focus.SetForegroundCalls);
+        Assert.Empty(authorization.RequestedPaths);
+        Assert.NotNull(result.Message);
+        Assert.Contains("path", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("100", result.Message);
+    }
+
+    [Fact]
+    public void AnInaccessibleProcessPathIsNotReplacedByName()
+    {
+        // int.MaxValue is not a real Windows PID (PIDs are 4-byte aligned).
+        Assert.Null(SelectionService.TryResolveProcessPath(int.MaxValue));
+    }
+
+    [Fact]
     public async Task SelectingByAmbiguousTitleReturnsCandidatesWithoutFocusing()
     {
         var first = NotepadWindow(hwnd: 1, pid: 100, title: "a.txt - Notepad");
@@ -197,13 +236,15 @@ public sealed class SelectionTests
         WindowRegistry registry,
         SelectionStore selection,
         FakeWin32? focus = null,
-        IAppAuthorization? authorization = null)
+        IAppAuthorization? authorization = null,
+        Func<int, string?>? processPathResolver = null)
         => new(
             registry,
             authorization ?? new AllowAllAuthorization(),
             selection,
             new ForegroundService(focus ?? new FakeWin32()),
-            new WindowEnumerator(api, registry));
+            new WindowEnumerator(api, registry),
+            processPathResolver ?? (pid => $@"C:\tests\{pid}.exe"));
 
     private static RawWindow NotepadWindow(
         nint hwnd = 1,

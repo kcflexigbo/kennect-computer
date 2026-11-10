@@ -40,19 +40,22 @@ public sealed class SelectionService
     private readonly SelectionStore _selection;
     private readonly ForegroundService _foreground;
     private readonly WindowEnumerator? _windows;
+    private readonly Func<int, string?> _processPathResolver;
 
     public SelectionService(
         WindowRegistry registry,
         IAppAuthorization authorization,
         SelectionStore selection,
         ForegroundService? foreground = null,
-        WindowEnumerator? windows = null)
+        WindowEnumerator? windows = null,
+        Func<int, string?>? processPathResolver = null)
     {
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _authorization = authorization ?? throw new ArgumentNullException(nameof(authorization));
         _selection = selection ?? throw new ArgumentNullException(nameof(selection));
         _foreground = foreground ?? new ForegroundService(new WindowsForegroundApi());
         _windows = windows;
+        _processPathResolver = processPathResolver ?? TryResolveProcessPath;
     }
 
     /// <summary>Selects and focuses an explicit, already-issued window ID.</summary>
@@ -146,8 +149,21 @@ public sealed class SelectionService
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        // R27: authorization is per executable path. A bare process name is not
+        // an identity — same-named binaries at other paths, or replacement
+        // attacks, would be indistinguishable — so fail closed and never focus.
+        var processPath = _processPathResolver(resolved.Pid);
+        if (string.IsNullOrWhiteSpace(processPath))
+        {
+            return SelectResult.Failed(
+                ErrorCode.AuthorizationDenied,
+                message: $"The executable path for PID {resolved.Pid} "
+                    + $"({resolved.ProcessName}) could not be resolved, "
+                    + "so the app cannot be authorized.");
+        }
+
         var decision = await _authorization
-            .AuthorizeAsync(ResolveProcessPath(resolved), cancellationToken)
+            .AuthorizeAsync(processPath, cancellationToken)
             .ConfigureAwait(false);
 
         if (decision == AuthorizationDecision.Deny)
@@ -216,32 +232,36 @@ public sealed class SelectionService
     }
 
     /// <summary>
-    /// The process image path handed to <see cref="IAppAuthorization"/>. Falls
-    /// back to the process name when the image path is inaccessible (elevated
-    /// or protected processes).
+    /// The executable path handed to <see cref="IAppAuthorization"/>, or null
+    /// when the image path is inaccessible (elevated or protected processes) or
+    /// not fully qualified. The process name is never substituted for a path
+    /// (R27).
     /// </summary>
-    private static string ResolveProcessPath(ResolvedWindow window)
+    internal static string? TryResolveProcessPath(int pid)
     {
         try
         {
-            using var process = Process.GetProcessById(window.Pid);
-            return process.MainModule?.FileName ?? window.ProcessName;
+            using var process = Process.GetProcessById(pid);
+            var path = process.MainModule?.FileName;
+            return !string.IsNullOrWhiteSpace(path) && Path.IsPathFullyQualified(path)
+                ? path
+                : null;
         }
         catch (ArgumentException)
         {
-            return window.ProcessName;
+            return null;
         }
         catch (InvalidOperationException)
         {
-            return window.ProcessName;
+            return null;
         }
         catch (Win32Exception)
         {
-            return window.ProcessName;
+            return null;
         }
         catch (NotSupportedException)
         {
-            return window.ProcessName;
+            return null;
         }
     }
 }

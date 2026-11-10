@@ -226,7 +226,8 @@ public sealed class DispatcherTests
             new AllowAllAuthorization(),
             new SelectionStore(),
             new ForegroundService(focus),
-            enumerator);
+            enumerator,
+            pid => $@"C:\tests\{pid}.exe");
         var dispatcher = new JsonRpcDispatcher(
             tokens,
             new FakeMonitorProvider(),
@@ -246,7 +247,8 @@ public sealed class DispatcherTests
             registry,
             new AllowAllAuthorization(),
             new SelectionStore(),
-            windows: enumerator);
+            windows: enumerator,
+            processPathResolver: pid => $@"C:\tests\{pid}.exe");
         return new(
             tokens,
             new FakeMonitorProvider(),
