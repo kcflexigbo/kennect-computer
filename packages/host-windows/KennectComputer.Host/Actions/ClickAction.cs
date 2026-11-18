@@ -20,35 +20,21 @@ namespace KennectComputer.Host.Actions;
 /// </summary>
 public sealed class ClickAction
 {
-    private static readonly TimeSpan DefaultFocusTimeout = TimeSpan.FromSeconds(1);
-
     private readonly IUiaNodeResolver _resolver;
-    private readonly ForegroundService _foreground;
+    private readonly ActionPreflight _preflight;
     private readonly IInputSender _input;
     private readonly SnapshotStore _snapshots;
-    private readonly SelectionStore _selection;
-    private readonly WindowRegistry _registry;
-    private readonly ExpectEvaluator _expect;
-    private readonly TimeSpan _focusTimeout;
 
     public ClickAction(
         IUiaNodeResolver resolver,
-        ForegroundService foreground,
+        ActionPreflight preflight,
         IInputSender input,
-        SnapshotStore snapshots,
-        SelectionStore selection,
-        WindowRegistry registry,
-        ExpectEvaluator expect,
-        TimeSpan? focusTimeout = null)
+        SnapshotStore snapshots)
     {
         _resolver = resolver ?? throw new ArgumentNullException(nameof(resolver));
-        _foreground = foreground ?? throw new ArgumentNullException(nameof(foreground));
+        _preflight = preflight ?? throw new ArgumentNullException(nameof(preflight));
         _input = input ?? throw new ArgumentNullException(nameof(input));
         _snapshots = snapshots ?? throw new ArgumentNullException(nameof(snapshots));
-        _selection = selection ?? throw new ArgumentNullException(nameof(selection));
-        _registry = registry ?? throw new ArgumentNullException(nameof(registry));
-        _expect = expect ?? throw new ArgumentNullException(nameof(expect));
-        _focusTimeout = focusTimeout ?? DefaultFocusTimeout;
     }
 
     public async Task<ActionResult> ExecuteAsync(
@@ -58,16 +44,7 @@ public sealed class ClickAction
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var selected = _selection.Selected
-            ?? throw Failure(
-                ErrorCode.InvalidRequest,
-                "No window is selected; select a window before clicking.");
-
-        if (!_registry.TryResolve(selected.WindowId, out var resolved) || resolved is null)
-        {
-            _selection.Clear();
-            throw Failure(ErrorCode.WindowGone, "The window is gone.");
-        }
+        var resolved = _preflight.ResolveSelectedWindow("clicking");
 
         var hasNode = !string.IsNullOrWhiteSpace(request.NodeId);
         var hasX = request.X is not null;
@@ -90,18 +67,9 @@ public sealed class ClickAction
 
         // The window identity is verified above; now check the caller's
         // preconditions against one fresh read, before any focus or input.
-        cancellationToken.ThrowIfCancellationRequested();
-        var expectation = await _expect
-            .EvaluateAsync(resolved.Hwnd, request.Expect, cancellationToken)
+        await _preflight
+            .CheckExpectationsAsync(resolved, request.Expect, cancellationToken)
             .ConfigureAwait(false);
-
-        if (!expectation.Ok)
-        {
-            throw new ActionFailedException(
-                ErrorCode.ExpectationFailed,
-                $"The expect predicate failed: {expectation.FailedPredicate}.",
-                expectation.FailedPredicate);
-        }
 
         return hasNode
             ? await ClickNodeAsync(resolved, request, cancellationToken).ConfigureAwait(false)
@@ -130,9 +98,14 @@ public sealed class ClickAction
                 ErrorCode.StaleSnapshot,
                 "The node no longer matches the live element; take a new snapshot.");
 
-        // Foreground is verified by FocusAsync before any pattern runs: a
-        // semantic activation can still change another window's state.
-        await FocusAsync(window.Hwnd, cancellationToken).ConfigureAwait(false);
+        // Foreground is verified before any pattern runs: a semantic
+        // activation can still change another window's state.
+        await _preflight
+            .FocusAsync(
+                window.Hwnd,
+                "Windows refused to bring the window to the foreground; no input was sent.",
+                cancellationToken)
+            .ConfigureAwait(false);
 
         if (TrySemanticAction(live, cancellationToken))
         {
@@ -189,7 +162,12 @@ public sealed class ClickAction
             throw Failure(ErrorCode.InvalidRequest, "The click coordinates could not be mapped.");
         }
 
-        await FocusAsync(window.Hwnd, cancellationToken).ConfigureAwait(false);
+        await _preflight
+            .FocusAsync(
+                window.Hwnd,
+                "Windows refused to bring the window to the foreground; no input was sent.",
+                cancellationToken)
+            .ConfigureAwait(false);
 
         cancellationToken.ThrowIfCancellationRequested();
         _input.MoveTo(point.X, point.Y);
@@ -197,19 +175,6 @@ public sealed class ClickAction
         _input.Click(request.Button, request.Count);
 
         return Succeeded(window.Info, "coordinates");
-    }
-
-    private async Task FocusAsync(nint hwnd, CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var focus = await _foreground.FocusAsync(hwnd, _focusTimeout).ConfigureAwait(false);
-        if (!focus.Ok)
-        {
-            throw Failure(
-                focus.Error ?? ErrorCode.FocusRefused,
-                "Windows refused to bring the window to the foreground; no input was sent.");
-        }
     }
 
     /// <summary>

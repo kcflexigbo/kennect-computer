@@ -19,6 +19,8 @@ namespace KennectComputer.Host.Tests;
 /// </summary>
 public sealed class TypeActionTests
 {
+    private const ushort VkControl = 0x11;
+
     private static readonly Rect InitialBounds = new(100, 50, 3000, 2000);
 
     [Fact]
@@ -57,6 +59,36 @@ public sealed class TypeActionTests
                 CancellationToken.None));
 
         Assert.Equal("input blocked", failure.Message);
+        Assert.Equal(["hello", "old text"], harness.Clipboard.Sets);
+        Assert.Equal("old text", harness.Clipboard.Text);
+    }
+
+    [Fact]
+    public async Task AChordFailureReleasesTheControlKey()
+    {
+        var harness = Harness.Create(new FakeUiaNodeResolver(null));
+        harness.Clipboard.Text = "old text";
+
+        var releaseFailed = false;
+        harness.Input.BeforeKeyUp = () =>
+        {
+            if (!releaseFailed)
+            {
+                releaseFailed = true;
+                throw new InvalidOperationException("send failed");
+            }
+        };
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            harness.Action.ExecuteAsync(
+                new TypeRequest { Text = "hello" },
+                CancellationToken.None));
+
+        Assert.Equal("send failed", failure.Message);
+
+        // V's release failed, but Ctrl must still be released so the system is
+        // not left with a stuck modifier and a repeating paste shortcut.
+        Assert.Equal((VkControl, false), harness.Input.Keys[^1]);
         Assert.Equal(["hello", "old text"], harness.Clipboard.Sets);
         Assert.Equal("old text", harness.Clipboard.Text);
     }
@@ -488,14 +520,15 @@ public sealed class TypeActionTests
 
             Action = new TypeAction(
                 resolver,
-                new ForegroundService(Foreground),
+                new ActionPreflight(
+                    new ForegroundService(Foreground),
+                    Selection,
+                    Registry,
+                    new ExpectEvaluator(Walker, Foreground),
+                    TimeSpan.FromMilliseconds(10)),
                 Input,
                 Clipboard,
-                Snapshots,
-                Selection,
-                Registry,
-                new ExpectEvaluator(Walker, Foreground),
-                TimeSpan.FromMilliseconds(10));
+                Snapshots);
         }
 
         public RawWindow Raw { get; }

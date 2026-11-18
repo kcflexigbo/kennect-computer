@@ -390,13 +390,14 @@ public sealed class ClickActionTests
 
             Action = new ClickAction(
                 resolver,
-                new ForegroundService(Foreground),
+                new ActionPreflight(
+                    new ForegroundService(Foreground),
+                    Selection,
+                    Registry,
+                    new ExpectEvaluator(Walker, Foreground),
+                    TimeSpan.FromMilliseconds(10)),
                 Input,
-                Snapshots,
-                Selection,
-                Registry,
-                new ExpectEvaluator(Walker, Foreground),
-                TimeSpan.FromMilliseconds(10));
+                Snapshots);
         }
 
         public RawWindow Raw { get; }

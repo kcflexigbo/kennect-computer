@@ -2,7 +2,6 @@ using KennectComputer.Host.Control;
 using KennectComputer.Host.Input;
 using KennectComputer.Host.Protocol;
 using KennectComputer.Host.Uia;
-using KennectComputer.Host.Windows;
 
 namespace KennectComputer.Host.Actions;
 
@@ -18,51 +17,39 @@ namespace KennectComputer.Host.Actions;
 /// app.
 ///
 /// Paste (the default) saves the clipboard, sets the text, sends Ctrl+V, and
-/// restores the saved text in a <c>finally</c> even when the chord throws. If
-/// the clipboard cannot be read there is no way to put the user's content back,
-/// so the action fails with <c>INVALID_REQUEST</c> before writing anything.
-/// Value sets the accessibility value where supported and falls back to paste.
-/// Keys sends one Unicode event per UTF-16 code unit and never touches the
-/// clipboard. Every failure is raised as an <see cref="ActionFailedException"/>;
-/// cancellation propagates unchanged.
+/// restores the saved text in a <c>finally</c> even when the chord throws. The
+/// chord releases Ctrl in its own <c>finally</c>, so a failed or partially
+/// delivered key event cannot leave a stuck modifier. If the clipboard cannot
+/// be read there is no way to put the user's content back, so the action fails
+/// with <c>INVALID_REQUEST</c> before writing anything. Value sets the
+/// accessibility value where supported and falls back to paste. Keys sends one
+/// Unicode event per UTF-16 code unit and never touches the clipboard. Action
+/// failures are raised as <see cref="ActionFailedException"/>; cancellation and
+/// input-send failures propagate unchanged.
 /// </summary>
 public sealed class TypeAction
 {
     private const ushort VkControl = 0x11;
     private const ushort VkPaste = 0x56;
 
-    private static readonly TimeSpan DefaultFocusTimeout = TimeSpan.FromSeconds(1);
-
     private readonly IUiaNodeResolver _resolver;
-    private readonly ForegroundService _foreground;
+    private readonly ActionPreflight _preflight;
     private readonly IInputSender _input;
     private readonly IClipboard _clipboard;
     private readonly SnapshotStore _snapshots;
-    private readonly SelectionStore _selection;
-    private readonly WindowRegistry _registry;
-    private readonly ExpectEvaluator _expect;
-    private readonly TimeSpan _focusTimeout;
 
     public TypeAction(
         IUiaNodeResolver resolver,
-        ForegroundService foreground,
+        ActionPreflight preflight,
         IInputSender input,
         IClipboard clipboard,
-        SnapshotStore snapshots,
-        SelectionStore selection,
-        WindowRegistry registry,
-        ExpectEvaluator expect,
-        TimeSpan? focusTimeout = null)
+        SnapshotStore snapshots)
     {
         _resolver = resolver ?? throw new ArgumentNullException(nameof(resolver));
-        _foreground = foreground ?? throw new ArgumentNullException(nameof(foreground));
+        _preflight = preflight ?? throw new ArgumentNullException(nameof(preflight));
         _input = input ?? throw new ArgumentNullException(nameof(input));
         _clipboard = clipboard ?? throw new ArgumentNullException(nameof(clipboard));
         _snapshots = snapshots ?? throw new ArgumentNullException(nameof(snapshots));
-        _selection = selection ?? throw new ArgumentNullException(nameof(selection));
-        _registry = registry ?? throw new ArgumentNullException(nameof(registry));
-        _expect = expect ?? throw new ArgumentNullException(nameof(expect));
-        _focusTimeout = focusTimeout ?? DefaultFocusTimeout;
     }
 
     public async Task<ActionResult> ExecuteAsync(
@@ -89,31 +76,13 @@ public sealed class TypeAction
                 "method \"value\" requires a nodeId to set the value on.");
         }
 
-        var selected = _selection.Selected
-            ?? throw Failure(
-                ErrorCode.InvalidRequest,
-                "No window is selected; select a window before typing.");
-
-        if (!_registry.TryResolve(selected.WindowId, out var resolved) || resolved is null)
-        {
-            _selection.Clear();
-            throw Failure(ErrorCode.WindowGone, "The window is gone.");
-        }
+        var resolved = _preflight.ResolveSelectedWindow("typing");
 
         // The window identity is verified above; now check the caller's
         // preconditions against one fresh read, before any focus or input.
-        cancellationToken.ThrowIfCancellationRequested();
-        var expectation = await _expect
-            .EvaluateAsync(resolved.Hwnd, request.Expect, cancellationToken)
+        await _preflight
+            .CheckExpectationsAsync(resolved, request.Expect, cancellationToken)
             .ConfigureAwait(false);
-
-        if (!expectation.Ok)
-        {
-            throw new ActionFailedException(
-                ErrorCode.ExpectationFailed,
-                $"The expect predicate failed: {expectation.FailedPredicate}.",
-                expectation.FailedPredicate);
-        }
 
         IUiaNode? live = null;
         if (!string.IsNullOrWhiteSpace(request.NodeId))
@@ -136,10 +105,15 @@ public sealed class TypeAction
                     "The node no longer matches the live element; take a new snapshot.");
         }
 
-        // Input only ever reaches a window that FocusAsync verified
-        // foreground. A node target then focuses the live element itself, so
-        // text cannot land in whichever control happened to be focused.
-        await FocusAsync(resolved.Hwnd, cancellationToken).ConfigureAwait(false);
+        // Input only ever reaches a window the preflight verified foreground.
+        // A node target then focuses the live element itself, so text cannot
+        // land in whichever control happened to be focused.
+        await _preflight
+            .FocusAsync(
+                resolved.Hwnd,
+                "Windows refused to bring the window to the foreground; no text was typed.",
+                cancellationToken)
+            .ConfigureAwait(false);
 
         if (live is not null)
         {
@@ -226,14 +200,22 @@ public sealed class TypeAction
                     "The clipboard could not be updated; no text was typed.");
             }
 
+            // Ctrl is held only for the chord, and it is released in finally:
+            // cancellation or a failed/partially delivered key event between
+            // the presses must not leave a system-wide stuck modifier. The
+            // token is checked once before the chord, never between its
+            // events, because an abort there could strand Ctrl down.
             cancellationToken.ThrowIfCancellationRequested();
             _input.KeyDown(VkControl);
-            cancellationToken.ThrowIfCancellationRequested();
-            _input.KeyDown(VkPaste);
-            cancellationToken.ThrowIfCancellationRequested();
-            _input.KeyUp(VkPaste);
-            cancellationToken.ThrowIfCancellationRequested();
-            _input.KeyUp(VkControl);
+            try
+            {
+                _input.KeyDown(VkPaste);
+                _input.KeyUp(VkPaste);
+            }
+            finally
+            {
+                _input.KeyUp(VkControl);
+            }
         }
         finally
         {
@@ -287,19 +269,6 @@ public sealed class TypeAction
                 // The clipboard is still held by another app; nothing more can
                 // be done without masking the action's real outcome.
             }
-        }
-    }
-
-    private async Task FocusAsync(nint hwnd, CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var focus = await _foreground.FocusAsync(hwnd, _focusTimeout).ConfigureAwait(false);
-        if (!focus.Ok)
-        {
-            throw Failure(
-                focus.Error ?? ErrorCode.FocusRefused,
-                "Windows refused to bring the window to the foreground; no text was typed.");
         }
     }
 
