@@ -6,7 +6,9 @@ import { AUDIT_RETENTION_DAYS } from "../config.js";
 /**
  * One persisted audit record. The field set is deliberately small (R38): the
  * tool, the target identifiers, the outcome, and timing — never a window
- * title, message, typed text, or snapshot content.
+ * title, message, typed text, or snapshot content. Type actions may record
+ * only the UTF-8 byte length and SHA-256 hex digest of the typed text, so an
+ * operator can correlate a value without the log holding it.
  */
 export interface AuditEntry {
   timestamp: string;
@@ -15,6 +17,8 @@ export interface AuditEntry {
   windowId?: string;
   process?: string;
   nodeId?: string;
+  textLength?: number;
+  textSha256?: string;
   result: string;
   durationMs: number;
 }
@@ -90,6 +94,12 @@ export class AuditLog implements AuditSink {
       }
       if (entry.nodeId !== undefined) {
         record.nodeId = entry.nodeId;
+      }
+      if (entry.textLength !== undefined) {
+        record.textLength = entry.textLength;
+      }
+      if (entry.textSha256 !== undefined) {
+        record.textSha256 = entry.textSha256;
       }
 
       mkdirSync(this.dir, { recursive: true });

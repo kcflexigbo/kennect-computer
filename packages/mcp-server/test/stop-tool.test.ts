@@ -156,6 +156,10 @@ describe("computer_stop MCP tool", () => {
       "computer_focus",
       "computer_snapshot",
       "computer_stop",
+      "computer_click",
+      "computer_type",
+      "computer_key",
+      "computer_scroll",
     ]);
 
     const stop = tools.find((tool) => tool.name === "computer_stop");

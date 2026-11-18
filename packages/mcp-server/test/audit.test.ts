@@ -228,6 +228,37 @@ describe("AuditLog", () => {
     });
   });
 
+  it("writes type text fingerprints instead of the text", () => {
+    const dir = temporaryDirectory();
+    const log = new AuditLog({ dir, retentionDays: 7, now: fixedNow });
+    log.write({
+      sessionId: "s1",
+      tool: "computer_type",
+      nodeId: "n3:2",
+      textLength: 13,
+      textSha256: "a".repeat(64),
+      result: "ok",
+      durationMs: 4,
+      text: "typed message",
+      title: "Untitled - Notepad",
+      message: "failure detail",
+    } as unknown as AuditEntryInput);
+
+    const [line] = readAuditLines(dir);
+
+    expect(line).toEqual({
+      timestamp: "2026-11-10T12:00:00.000Z",
+      sessionId: "s1",
+      tool: "computer_type",
+      nodeId: "n3:2",
+      textLength: 13,
+      textSha256: "a".repeat(64),
+      result: "ok",
+      durationMs: 4,
+    });
+    expect(JSON.stringify(line)).not.toContain("typed message");
+  });
+
   it("never throws when the audit directory is unwritable", () => {
     const parent = temporaryDirectory();
     const filePath = path.join(parent, "not-a-directory");
@@ -312,6 +343,10 @@ describe("MCP audit wiring", () => {
       "computer_focus",
       "computer_snapshot",
       "computer_stop",
+      "computer_click",
+      "computer_type",
+      "computer_key",
+      "computer_scroll",
     ]);
 
     const calls: Array<{ name: string; arguments: Record<string, unknown> }> = [

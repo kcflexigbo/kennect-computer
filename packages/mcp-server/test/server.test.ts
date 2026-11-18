@@ -54,6 +54,10 @@ describe("computer_status MCP tool", () => {
       "computer_focus",
       "computer_snapshot",
       "computer_stop",
+      "computer_click",
+      "computer_type",
+      "computer_key",
+      "computer_scroll",
     ]);
 
     const status = tools.find((tool) => tool.name === "computer_status");
@@ -126,5 +130,78 @@ describe("computer_status MCP tool", () => {
     await expect(
       client.callTool({ name: "computer_status", arguments: { unexpected: true } }),
     ).rejects.toMatchObject({ code: ErrorCode.InvalidParams });
+  });
+
+  it("advertises the M2 action tools as mutating with strict schemas", async () => {
+    const client = await connect(providerFor({ request: vi.fn() }));
+
+    const { tools } = await client.listTools();
+    const actionTools = [
+      "computer_click",
+      "computer_type",
+      "computer_key",
+      "computer_scroll",
+    ];
+
+    for (const name of actionTools) {
+      const tool = tools.find((candidate) => candidate.name === name);
+      expect(tool?.annotations).toMatchObject({
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      });
+      expect(tool?.inputSchema).toMatchObject({
+        type: "object",
+        additionalProperties: false,
+      });
+    }
+
+    const click = tools.find((tool) => tool.name === "computer_click");
+    expect(click?.inputSchema).toMatchObject({
+      properties: {
+        nodeId: { type: "string", minLength: 1 },
+        x: { type: "number" },
+        y: { type: "number" },
+        space: { type: "string", enum: ["image", "screen"] },
+        button: { type: "string", enum: ["left", "middle", "right"] },
+        count: { type: "integer", minimum: 1 },
+        expect: { type: "array" },
+      },
+    });
+
+    const type = tools.find((tool) => tool.name === "computer_type");
+    expect(type?.inputSchema).toMatchObject({
+      properties: {
+        text: { type: "string", minLength: 1 },
+        method: { type: "string", enum: ["paste", "value", "keys"] },
+        nodeId: { type: "string", minLength: 1 },
+        expect: { type: "array" },
+      },
+      required: ["text"],
+    });
+
+    const key = tools.find((tool) => tool.name === "computer_key");
+    expect(key?.inputSchema).toMatchObject({
+      properties: {
+        keys: { type: "string", minLength: 1 },
+        expect: { type: "array" },
+      },
+      required: ["keys"],
+    });
+
+    const scroll = tools.find((tool) => tool.name === "computer_scroll");
+    expect(scroll?.inputSchema).toMatchObject({
+      properties: {
+        nodeId: { type: "string", minLength: 1 },
+        x: { type: "number" },
+        y: { type: "number" },
+        space: { type: "string", enum: ["image", "screen"] },
+        direction: { type: "string", enum: ["up", "down", "left", "right"] },
+        amount: { type: "integer", minimum: 1 },
+        expect: { type: "array" },
+      },
+      required: ["direction"],
+    });
   });
 });
