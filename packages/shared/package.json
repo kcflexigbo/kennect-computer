@@ -22,6 +22,16 @@
       "development": "./src/schemas.ts",
       "import": "./dist/schemas.js"
     },
+    "./actions": {
+      "types": "./dist/actions.d.ts",
+      "development": "./src/actions.ts",
+      "import": "./dist/actions.js"
+    },
+    "./action-schemas": {
+      "types": "./dist/action-schemas.d.ts",
+      "development": "./src/action-schemas.ts",
+      "import": "./dist/action-schemas.js"
+    },
     "./fixtures/status.json": "./fixtures/status.json",
     "./fixtures/snapshot.json": "./fixtures/snapshot.json"
   },
