@@ -21,7 +21,7 @@
       "WindowsSecurity.exe", "LogonUI.exe",
       "Keychain Access", "SecurityAgent"
     ],
-    "excludedTitles": ["*password*", "*bank*"],
+    "excludedTitles": ["*password*", "*bank*", "*Windows Security*"],
     "auditRetentionDays": 7
   },
   "apps": {
