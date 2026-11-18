@@ -1,8 +1,8 @@
 namespace KennectComputer.Host.Policy;
 
 /// <summary>
-/// M1 placeholder policy: every process is authorized for the session.
-/// Task 10 replaces this with the real per-app authorization flow.
+/// Test-only policy: every process is authorized for the session. The running
+/// host uses the config-driven <see cref="AppAuthorization"/> instead.
 /// </summary>
 public sealed class AllowAllAuthorization : IAppAuthorization
 {

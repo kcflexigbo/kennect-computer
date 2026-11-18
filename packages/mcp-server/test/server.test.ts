@@ -53,6 +53,7 @@ describe("computer_status MCP tool", () => {
       "computer_select",
       "computer_focus",
       "computer_snapshot",
+      "computer_stop",
     ]);
 
     const status = tools.find((tool) => tool.name === "computer_status");

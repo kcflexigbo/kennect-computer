@@ -231,6 +231,7 @@ describe("computer_select and computer_focus MCP tools", () => {
       "computer_select",
       "computer_focus",
       "computer_snapshot",
+      "computer_stop",
     ]);
 
     const select = tools.find((tool) => tool.name === "computer_select");

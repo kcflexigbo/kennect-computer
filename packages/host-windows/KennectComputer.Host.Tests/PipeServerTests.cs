@@ -57,6 +57,51 @@ public sealed class PipeServerTests
         }
     }
 
+    [Fact]
+    public async Task TheControlLockIsHeldUntilTheOwningConnectionDisconnects()
+    {
+        await using var harness = ServerHarness.Start();
+
+        await using var first = await harness.ConnectAsync();
+        var hello = await RequestAsync(first, HelloJson(harness.Token), harness.Cancellation);
+        Assert.True(hello.TryGetProperty("result", out _));
+
+        await using var second = await harness.ConnectAsync();
+        var locked = await RequestAsync(second, HelloJson(harness.Token), harness.Cancellation);
+        Assert.Equal(
+            "LOCKED_BY_OTHER_SESSION",
+            locked.GetProperty("error").GetProperty("data").GetProperty("code").GetString());
+
+        // A connection whose hello was locked stays unauthenticated; its next
+        // call is UNAUTHORIZED and the pipe closes.
+        var status = await RequestAsync(second, StatusJson(id: 2), harness.Cancellation);
+        Assert.Equal(
+            "UNAUTHORIZED",
+            status.GetProperty("error").GetProperty("data").GetProperty("code").GetString());
+
+        // Disconnecting the owner releases the lock for the next connection.
+        await first.DisposeAsync();
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        var acquired = false;
+        while (!acquired && DateTime.UtcNow < deadline)
+        {
+            await using var candidate = await harness.ConnectAsync();
+            var response = await RequestAsync(candidate, HelloJson(harness.Token), harness.Cancellation);
+            if (response.TryGetProperty("result", out _))
+            {
+                acquired = true;
+                break;
+            }
+
+            Assert.Equal(
+                "LOCKED_BY_OTHER_SESSION",
+                response.GetProperty("error").GetProperty("data").GetProperty("code").GetString());
+            await Task.Delay(25, harness.Cancellation);
+        }
+
+        Assert.True(acquired, "The control session was not released after the owner disconnected.");
+    }
+
     private static string HelloJson(string token)
         => JsonSerializer.Serialize(new
         {
@@ -149,7 +194,8 @@ public sealed class PipeServerTests
                 selection,
                 registry,
                 new UiaSnapshotter(new FakeUiaWalker(), _ => { }, _ => { }),
-                new SnapshotStore());
+                new SnapshotStore(),
+                new ControlSession());
             var server = new PipeServer(pipeName, tokens, dispatcher);
             var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             var run = server.RunAsync(cancellation.Token);

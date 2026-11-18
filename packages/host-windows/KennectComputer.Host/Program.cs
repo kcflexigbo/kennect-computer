@@ -1,9 +1,12 @@
 using System.Runtime.InteropServices;
 
 using KennectComputer.Host.Auth;
+using KennectComputer.Host.Config;
 using KennectComputer.Host.Control;
+using KennectComputer.Host.Input;
 using KennectComputer.Host.Ipc;
 using KennectComputer.Host.Policy;
+using KennectComputer.Host.Tray;
 using KennectComputer.Host.Uia;
 using KennectComputer.Host.Windows;
 
@@ -13,9 +16,21 @@ internal static class Program
 {
     private const int PerMonitorAwareV2 = -4;
 
+    private static readonly TimeSpan TrayStartupTimeout = TimeSpan.FromSeconds(10);
+
     private static async Task<int> Main()
     {
         EnablePerMonitorDpiAwareness();
+
+        var config = ConfigStore.Load(ConfigStore.FindDefaultPath());
+
+        // One host per user session. A second launch signals the running host
+        // to show its tray and exits without touching the pipe or token.
+        using var singleInstance = new SingleInstance();
+        if (!singleInstance.TryAcquire())
+        {
+            return 0;
+        }
 
         var tokens = TokenStore.CreateDefault();
         var pipeName = PipeServer.ForUser(Environment.UserName);
@@ -24,12 +39,41 @@ internal static class Program
         tokens.Rotate();
         tokens.WriteSessionInfo(pipeName);
 
+        using var shutdown = new CancellationTokenSource();
+        var control = new ControlSession();
+
         var windowApi = new WindowApi();
         var registry = new WindowRegistry(windowApi);
-        var windows = new WindowEnumerator(windowApi, registry);
+        var exclusions = new ExclusionPolicy(config);
+        var windows = new WindowEnumerator(windowApi, registry, exclusions);
+
+        // The tray and the stop hotkey run on a dedicated STA thread; the pipe
+        // server stays on the main async path (R30).
+        var trayReady = new TaskCompletionSource<TrayApp>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var hotkey = new StopHotkey(
+            control,
+            new Win32HotkeyRegistrar(),
+            config.Control.StopHotkey.Windows);
+        var trayThread = StartTrayThread(
+            control,
+            hotkey,
+            singleInstance.ShowTraySignal,
+            shutdown,
+            trayReady);
+        var tray = await WaitForTrayAsync(trayReady).ConfigureAwait(false);
+
+        // Without a tray there is no prompt surface, so control fails closed
+        // while status, windows, and snapshots keep working.
+        IAppAuthorization authorization = tray is null
+            ? new AppAuthorization(config, new DenyAllAuthorizationPrompt())
+            : new AppAuthorization(
+                config,
+                new WinFormsAuthorizationPrompt(work => tray.InvokeAsync(work)));
+
         var selection = new SelectionService(
             registry,
-            new AllowAllAuthorization(),
+            authorization,
             new SelectionStore(),
             new ForegroundService(new WindowsForegroundApi()),
             windows);
@@ -41,10 +85,10 @@ internal static class Program
             selection,
             registry,
             new UiaSnapshotter(new WindowsUiaWalker()),
-            new SnapshotStore());
+            new SnapshotStore(),
+            control);
         var server = new PipeServer(pipeName, tokens, dispatcher);
 
-        using var shutdown = new CancellationTokenSource();
         Console.CancelKeyPress += (_, eventArgs) =>
         {
             eventArgs.Cancel = true;
@@ -61,10 +105,67 @@ internal static class Program
         }
         finally
         {
+            // Tray Exit and Ctrl+C both cancel the same token; make sure the
+            // tray loop and its hotkey registration are torn down either way.
+            tray?.RequestExit();
+            trayThread.Join(TimeSpan.FromSeconds(2));
             tokens.DeleteSessionInfo();
         }
 
         return 0;
+    }
+
+    /// <summary>
+    /// Starts the STA thread that owns the tray icon and the hidden window the
+    /// stop hotkey is registered on.
+    /// </summary>
+    private static Thread StartTrayThread(
+        ControlSession control,
+        StopHotkey hotkey,
+        EventWaitHandle? showTraySignal,
+        CancellationTokenSource shutdown,
+        TaskCompletionSource<TrayApp> ready)
+    {
+        var thread = new Thread(() =>
+        {
+            TrayApp? tray = null;
+            try
+            {
+                tray = new TrayApp(control, hotkey, showTraySignal, shutdown.Cancel);
+                ready.TrySetResult(tray);
+                tray.Run();
+            }
+            catch (Exception exception)
+            {
+                ready.TrySetException(exception);
+            }
+            finally
+            {
+                // Owned and disposed on the thread that created it.
+                tray?.Dispose();
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "Kennect tray and stop hotkey",
+        };
+
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        return thread;
+    }
+
+    private static async Task<TrayApp?> WaitForTrayAsync(TaskCompletionSource<TrayApp> ready)
+    {
+        try
+        {
+            return await ready.Task.WaitAsync(TrayStartupTimeout).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // A tray failure must not take down the host's data path.
+            return null;
+        }
     }
 
     private static void EnablePerMonitorDpiAwareness()

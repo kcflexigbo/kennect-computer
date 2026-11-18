@@ -73,7 +73,8 @@ public sealed class DispatcherTests
             selection,
             registry,
             NewSnapshotter(new FakeUiaWalker()),
-            new SnapshotStore());
+            new SnapshotStore(),
+            new ControlSession());
         var token = tokens.Rotate();
 
         var hello = await dispatcher.HandleAsync(JsonDocument.Parse($$$"""{"jsonrpc":"2.0","id":1,"method":"hello","params":{"token":"{{{token}}}","protocolVersion":1,"clientName":"test"}}""").RootElement);
@@ -397,6 +398,105 @@ public sealed class DispatcherTests
         Assert.Equal(4, harness.Walker.Calls);
     }
 
+    [Fact]
+    public async Task ASecondConnectionIsLockedOutUntilTheFirstReleases()
+    {
+        var tokens = TokenStore.CreateForTests(NewTempDir());
+        var control = new ControlSession();
+        var dispatcher = NewDispatcher(tokens, control: control);
+        var token = tokens.Rotate();
+
+        var first = await dispatcher.HandleAsync(HelloRequest(token), "connection-1");
+        Assert.True(first.TryGetProperty("result", out _));
+        Assert.Equal("connection-1", control.Owner);
+
+        var locked = await dispatcher.HandleAsync(HelloRequest(token), "connection-2");
+        Assert.Equal(
+            "LOCKED_BY_OTHER_SESSION",
+            locked.GetProperty("error").GetProperty("data").GetProperty("code").GetString());
+        Assert.Equal("connection-1", control.Owner);
+
+        dispatcher.ReleaseSession("connection-1");
+        var second = await dispatcher.HandleAsync(HelloRequest(token), "connection-2");
+        Assert.True(second.TryGetProperty("result", out _));
+        Assert.Equal("connection-2", control.Owner);
+    }
+
+    [Fact]
+    public async Task RepeatingHelloOnTheSameConnectionIsIdempotent()
+    {
+        var tokens = TokenStore.CreateForTests(NewTempDir());
+        var control = new ControlSession();
+        var dispatcher = NewDispatcher(tokens, control: control);
+        var token = tokens.Rotate();
+
+        Assert.True((await dispatcher.HandleAsync(HelloRequest(token), "connection-1"))
+            .TryGetProperty("result", out _));
+        Assert.True((await dispatcher.HandleAsync(HelloRequest(token), "connection-1"))
+            .TryGetProperty("result", out _));
+
+        Assert.Equal("connection-1", control.Owner);
+        Assert.False(control.TryAcquire("connection-2"));
+    }
+
+    [Fact]
+    public async Task AStaleTokenDoesNotAcquireTheControlLock()
+    {
+        var tokens = TokenStore.CreateForTests(NewTempDir());
+        var control = new ControlSession();
+        var dispatcher = NewDispatcher(tokens, control: control);
+        var token = tokens.Rotate();
+
+        var rejected = await dispatcher.HandleAsync(HelloRequest("stale-token"), "connection-1");
+        Assert.Equal(
+            "UNAUTHORIZED",
+            rejected.GetProperty("error").GetProperty("data").GetProperty("code").GetString());
+        Assert.False(control.IsHeld);
+
+        var accepted = await dispatcher.HandleAsync(HelloRequest(token), "connection-2");
+        Assert.True(accepted.TryGetProperty("result", out _));
+        Assert.Equal("connection-2", control.Owner);
+    }
+
+    [Fact]
+    public async Task StopReturnsOkAndCancelsTheCurrentOperation()
+    {
+        var tokens = TokenStore.CreateForTests(NewTempDir());
+        var control = new ControlSession();
+        var dispatcher = NewDispatcher(tokens, control: control);
+        var token = tokens.Rotate();
+
+        Assert.True((await dispatcher.HandleAsync(HelloRequest(token), "connection-1"))
+            .TryGetProperty("result", out _));
+        var operation = control.Token;
+
+        var response = await dispatcher.HandleAsync(Request("stop", "{}"), "connection-1");
+
+        Assert.True(response.GetProperty("result").GetProperty("ok").GetBoolean());
+        Assert.True(operation.IsCancellationRequested);
+        // Stop aborts the operation, not the session (R35).
+        Assert.True(control.IsHeld);
+        Assert.False(control.Token.IsCancellationRequested);
+    }
+
+    [Fact]
+    public async Task StopWithNoControlSessionStillSucceeds()
+    {
+        var tokens = TokenStore.CreateForTests(NewTempDir());
+        var control = new ControlSession();
+        var dispatcher = NewDispatcher(tokens, control: control);
+
+        var response = await dispatcher.HandleAsync(Request("stop", "{}"), "connection-1");
+
+        Assert.True(response.GetProperty("result").GetProperty("ok").GetBoolean());
+        Assert.False(control.IsHeld);
+    }
+
+    private static JsonElement HelloRequest(string token)
+        => JsonDocument.Parse(
+            $$$"""{"jsonrpc":"2.0","id":1,"method":"hello","params":{"token":"{{{token}}}","protocolVersion":1,"clientName":"test"}}""")
+            .RootElement;
+
     private static RawWindow NotepadRawWindow()
         => new(1, 100, "Notepad", "Notepad", new Rect(0, 0, 10, 10))
         {
@@ -440,12 +540,16 @@ public sealed class DispatcherTests
             selection,
             registry,
             NewSnapshotter(walker, capture),
-            new SnapshotStore());
+            new SnapshotStore(),
+            new ControlSession());
 
         return new SelectionHarness(dispatcher, registry, focus, fakeWalker, capture);
     }
 
-    private static JsonRpcDispatcher NewDispatcher(TokenStore tokens, FakeDesktopState? desktop = null)
+    private static JsonRpcDispatcher NewDispatcher(
+        TokenStore tokens,
+        FakeDesktopState? desktop = null,
+        ControlSession? control = null)
     {
         var api = new FakeWindowApi();
         var registry = new WindowRegistry(api);
@@ -464,7 +568,8 @@ public sealed class DispatcherTests
             selection,
             registry,
             NewSnapshotter(new FakeUiaWalker()),
-            new SnapshotStore());
+            new SnapshotStore(),
+            control ?? new ControlSession());
     }
 
     private static UiaSnapshotter NewSnapshotter(IUiaWalker walker, FakeWindowCapture? capture = null)

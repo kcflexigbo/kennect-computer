@@ -34,6 +34,7 @@ public sealed class JsonRpcDispatcher
     private readonly WindowRegistry _registry;
     private readonly UiaSnapshotter _snapshotter;
     private readonly SnapshotStore _snapshots;
+    private readonly ControlSession _control;
 
     public JsonRpcDispatcher(
         TokenStore tokens,
@@ -43,7 +44,8 @@ public sealed class JsonRpcDispatcher
         SelectionService selection,
         WindowRegistry registry,
         UiaSnapshotter snapshotter,
-        SnapshotStore snapshots)
+        SnapshotStore snapshots,
+        ControlSession control)
     {
         _tokens = tokens ?? throw new ArgumentNullException(nameof(tokens));
         _monitors = monitors ?? throw new ArgumentNullException(nameof(monitors));
@@ -53,19 +55,44 @@ public sealed class JsonRpcDispatcher
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _snapshotter = snapshotter ?? throw new ArgumentNullException(nameof(snapshotter));
         _snapshots = snapshots ?? throw new ArgumentNullException(nameof(snapshots));
+        _control = control ?? throw new ArgumentNullException(nameof(control));
     }
 
-    public async Task<JsonElement> HandleAsync(JsonElement request)
+    /// <summary>
+    /// Handles a request outside a pipe connection. Direct callers share one
+    /// local session id, which is enough for unit tests and embedding.
+    /// </summary>
+    public Task<JsonElement> HandleAsync(JsonElement request)
+        => HandleAsync(request, "local");
+
+    /// <summary>
+    /// Handles a request for a pipe connection. <paramref name="sessionId"/> is
+    /// the connection id used for control-session ownership (R33).
+    /// </summary>
+    public async Task<JsonElement> HandleAsync(JsonElement request, string sessionId)
     {
         try
         {
-            return await HandleRequestAsync(request).ConfigureAwait(false);
+            return await HandleRequestAsync(request, sessionId).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Stop cancels the in-flight operation; the client sees an abort
+            // rather than an internal error, and the session stays alive.
+            return Error(
+                ReadRequestId(request),
+                ActionErrorCode,
+                "The operation was stopped.",
+                "ACTION_TIMEOUT");
         }
         catch (Exception exception)
         {
             return Error(null, InternalErrorCode, exception.Message, "INVALID_REQUEST");
         }
     }
+
+    /// <summary>Releases the control session when a pipe connection closes (R33).</summary>
+    public void ReleaseSession(string sessionId) => _control.Release(sessionId);
 
     /// <summary>Builds a JSON-RPC parse-error response for malformed JSON.</summary>
     public static JsonElement ParseError(string message)
@@ -94,7 +121,7 @@ public sealed class JsonRpcDispatcher
             && code.ValueKind == JsonValueKind.String
             && string.Equals(code.GetString(), "UNAUTHORIZED", StringComparison.Ordinal);
 
-    private async Task<JsonElement> HandleRequestAsync(JsonElement request)
+    private async Task<JsonElement> HandleRequestAsync(JsonElement request, string sessionId)
     {
         if (request.ValueKind != JsonValueKind.Object)
         {
@@ -113,17 +140,18 @@ public sealed class JsonRpcDispatcher
 
         return methodElement.GetString() switch
         {
-            "hello" => HandleHello(id, request),
+            "hello" => HandleHello(id, request, sessionId),
             "status" => HandleStatus(id),
             "windows.list" => HandleWindowsList(id),
             "window.select" => await HandleWindowSelectAsync(id, request).ConfigureAwait(false),
             "snapshot" => HandleSnapshot(id, request),
             "action" => await HandleActionAsync(id, request).ConfigureAwait(false),
+            "stop" => HandleStop(id),
             var method => Error(id, MethodNotFoundCode, $"Method not found: {method}", "METHOD_NOT_FOUND"),
         };
     }
 
-    private JsonElement HandleHello(JsonNode? id, JsonElement request)
+    private JsonElement HandleHello(JsonNode? id, JsonElement request, string sessionId)
     {
         if (!request.TryGetProperty("params", out var parameters)
             || parameters.ValueKind != JsonValueKind.Object
@@ -142,6 +170,18 @@ public sealed class JsonRpcDispatcher
             return Error(id, InvalidRequestCode, "Unsupported protocol version.", "INVALID_REQUEST");
         }
 
+        // R33: hello claims the single control session for this connection.
+        // Token and version validation above must pass first so a failed
+        // handshake can never hold the lock.
+        if (!_control.TryAcquire(sessionId))
+        {
+            return Error(
+                id,
+                ActionErrorCode,
+                "Another client holds the control session.",
+                "LOCKED_BY_OTHER_SESSION");
+        }
+
         var result = new HelloResult
         {
             HostVersion = HostInfo.Version,
@@ -151,6 +191,17 @@ public sealed class JsonRpcDispatcher
         };
 
         return Success(id, result);
+    }
+
+    /// <summary>
+    /// Aborts the current operation. The session and connection stay alive so
+    /// the agent can observe and resume (R35); stopping with nothing running is
+    /// still a success.
+    /// </summary>
+    private JsonElement HandleStop(JsonNode? id)
+    {
+        _control.Stop();
+        return Success(id, new StopResult { Ok = true });
     }
 
     private JsonElement HandleStatus(JsonNode? id)
@@ -226,7 +277,7 @@ public sealed class JsonRpcDispatcher
         }
 
         var result = await _selection
-            .SelectAsync(criteria, CancellationToken.None)
+            .SelectAsync(criteria, _control.Token)
             .ConfigureAwait(false);
 
         return FromSelectResult(id, result);
@@ -321,7 +372,7 @@ public sealed class JsonRpcDispatcher
             resolved.Hwnd,
             resolved.Info.Bounds,
             options,
-            CancellationToken.None);
+            _control.Token);
 
         // The window can die while the tree is being walked; never report a
         // snapshot for a window the registry can no longer resolve.
@@ -418,7 +469,7 @@ public sealed class JsonRpcDispatcher
         }
 
         var result = await _selection
-            .SelectAsync(windowIdElement.GetString()!, CancellationToken.None)
+            .SelectAsync(windowIdElement.GetString()!, _control.Token)
             .ConfigureAwait(false);
 
         return FromSelectResult(id, result);
@@ -471,6 +522,12 @@ public sealed class JsonRpcDispatcher
         _ => ActionErrorCode,
     };
 
+    private static JsonNode? ReadRequestId(JsonElement request)
+        => request.ValueKind == JsonValueKind.Object
+            && request.TryGetProperty("id", out var id)
+            ? JsonNode.Parse(id.GetRawText())
+            : null;
+
     private static JsonElement Success(JsonNode? id, object result)
     {
         var response = new JsonObject
@@ -519,6 +576,12 @@ public sealed class JsonRpcDispatcher
     private sealed class WindowResult
     {
         public WindowInfo? Window { get; init; }
+    }
+
+    /// <summary>The <c>{ ok: true }</c> result of <c>stop</c>.</summary>
+    private sealed class StopResult
+    {
+        public bool Ok { get; init; }
     }
 
     private static class SelectErrorMessages

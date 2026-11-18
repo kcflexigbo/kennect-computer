@@ -1,0 +1,30 @@
+{
+  "host": {
+    "startOnDemand": true
+  },
+  "control": {
+    "stopHotkey": { "windows": "Ctrl+Alt+Shift+Esc", "macos": "Ctrl+Alt+Shift+Esc" },
+    "authorizationMode": "per-app",
+    "consequentialGate": "off",
+    "consequentialCountdownMs": 3000
+  },
+  "perception": {
+    "defaultMode": "both",
+    "maxDepth": 12,
+    "maxNodes": 1500,
+    "imageLongEdge": 1568,
+    "maxImageLongEdge": 2576
+  },
+  "privacy": {
+    "excludedProcesses": [
+      "KeePass.exe", "1Password.exe", "Bitwarden.exe",
+      "WindowsSecurity.exe", "LogonUI.exe",
+      "Keychain Access", "SecurityAgent"
+    ],
+    "excludedTitles": ["*password*", "*bank*"],
+    "auditRetentionDays": 7
+  },
+  "apps": {
+    "Feishu": { "consequentialGate": "off", "preAuthorized": true }
+  }
+}

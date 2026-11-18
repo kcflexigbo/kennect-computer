@@ -93,7 +93,8 @@ public sealed class PipeServer
                 }
 
                 var clientId = Interlocked.Increment(ref nextClientId);
-                var clientTask = HandleClientAsync(pipe, cancellationToken);
+                var sessionId = clientId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                var clientTask = HandleClientAsync(pipe, sessionId, cancellationToken);
                 clients[clientId] = clientTask;
                 RemoveWhenComplete(clients, clientId, clientTask);
             }
@@ -145,7 +146,10 @@ public sealed class PipeServer
         }
     }
 
-    private async Task HandleClientAsync(NamedPipeServerStream pipe, CancellationToken cancellationToken)
+    private async Task HandleClientAsync(
+        NamedPipeServerStream pipe,
+        string sessionId,
+        CancellationToken cancellationToken)
     {
         await using (pipe)
         {
@@ -190,7 +194,9 @@ public sealed class PipeServer
                             }
                             else
                             {
-                                response = await _dispatcher.HandleAsync(request.Clone()).ConfigureAwait(false);
+                                response = await _dispatcher
+                                    .HandleAsync(request.Clone(), sessionId)
+                                    .ConfigureAwait(false);
                                 authenticated = response.TryGetProperty("result", out _);
                             }
                         }
@@ -202,7 +208,9 @@ public sealed class PipeServer
                         }
                         else
                         {
-                            response = await _dispatcher.HandleAsync(request.Clone()).ConfigureAwait(false);
+                            response = await _dispatcher
+                                .HandleAsync(request.Clone(), sessionId)
+                                .ConfigureAwait(false);
                         }
                     }
                     catch (JsonException exception)
@@ -229,6 +237,11 @@ public sealed class PipeServer
             catch (Exception)
             {
                 // A single client must never fault the host's accept loop.
+            }
+            finally
+            {
+                // R33: a dropped client must never hold the control session.
+                _dispatcher.ReleaseSession(sessionId);
             }
         }
     }

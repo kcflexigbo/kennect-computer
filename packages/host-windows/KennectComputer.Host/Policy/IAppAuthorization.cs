@@ -14,8 +14,9 @@ public enum AuthorizationDecision
 }
 
 /// <summary>
-/// Authorizes controlling a process before the host focuses it. Task 10
-/// replaces the allow-all stub with the config-driven per-app policy.
+/// Authorizes controlling a process before the host focuses it. The host uses
+/// the config-driven <see cref="AppAuthorization"/>; tests may use
+/// <see cref="AllowAllAuthorization"/>.
 /// </summary>
 public interface IAppAuthorization
 {
