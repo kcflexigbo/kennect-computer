@@ -24,6 +24,21 @@ public static class ScreenCapture
     private const int RestoreSettleMilliseconds = 150;
 
     /// <summary>
+    /// Forces output alpha to 1 while leaving RGB unchanged. GDI-rendered
+    /// captures can contain real RGB content with a zero alpha channel;
+    /// blending such a source with the default SourceOver mode erases it.
+    /// </summary>
+    private static readonly ColorMatrix OpaqueAlphaMatrix = new(
+        new[]
+        {
+            new[] { 1f, 0f, 0f, 0f, 0f },
+            new[] { 0f, 1f, 0f, 0f, 0f },
+            new[] { 0f, 0f, 1f, 0f, 0f },
+            new[] { 0f, 0f, 0f, 0f, 0f },
+            new[] { 0f, 0f, 0f, 1f, 0f },
+        });
+
+    /// <summary>
     /// Captures a window's image, or null when capture is disabled or fails.
     /// <paramref name="bounds"/> are the window's physical screen pixels and
     /// become the payload's <c>sourceBounds</c>.
@@ -68,7 +83,7 @@ public static class ScreenCapture
         var longest = Math.Max(bitmap.Width, bitmap.Height);
         var factor = longest > longEdge ? longEdge / (double)longest : 1.0;
 
-        Bitmap? downscaled = null;
+        Bitmap? rasterized = null;
         try
         {
             var image = bitmap;
@@ -80,12 +95,15 @@ public static class ScreenCapture
                 var height = Math.Max(
                     1,
                     (int)Math.Round(bitmap.Height * factor, MidpointRounding.AwayFromZero));
-                downscaled = new Bitmap(width, height, PixelFormat.Format32bppArgb);
-                using var graphics = Graphics.FromImage(downscaled);
-                graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
-                graphics.DrawImage(bitmap, new Rectangle(0, 0, width, height));
-                image = downscaled;
+                rasterized = RasterizeOpaque(bitmap, width, height);
+                image = rasterized;
+            }
+            else if (Image.IsAlphaPixelFormat(bitmap.PixelFormat))
+            {
+                // Saving an alpha-format bitmap whose alpha is zero yields a
+                // fully transparent PNG no matter how much RGB it holds.
+                rasterized = RasterizeOpaque(bitmap, bitmap.Width, bitmap.Height);
+                image = rasterized;
             }
 
             using var stream = new MemoryStream();
@@ -105,7 +123,40 @@ public static class ScreenCapture
         }
         finally
         {
-            downscaled?.Dispose();
+            rasterized?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Draws the source onto an opaque surface and forces every output pixel to
+    /// full alpha, so capture content stored with a zero alpha channel survives
+    /// downscaling and PNG encoding.
+    /// </summary>
+    private static Bitmap RasterizeOpaque(Bitmap source, int width, int height)
+    {
+        var opaque = new Bitmap(width, height, PixelFormat.Format32bppRgb);
+        try
+        {
+            using var graphics = Graphics.FromImage(opaque);
+            graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+            using var attributes = new ImageAttributes();
+            attributes.SetColorMatrix(OpaqueAlphaMatrix);
+            graphics.DrawImage(
+                source,
+                new Rectangle(0, 0, width, height),
+                0,
+                0,
+                source.Width,
+                source.Height,
+                GraphicsUnit.Pixel,
+                attributes);
+            return opaque;
+        }
+        catch (Exception)
+        {
+            opaque.Dispose();
+            throw;
         }
     }
 
@@ -117,7 +168,9 @@ public static class ScreenCapture
 
     private static Bitmap? TryPrintWindow(nint hwnd, Rect bounds)
     {
-        var bitmap = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format32bppArgb);
+        // Capture surfaces are opaque RGB: GDI leaves the alpha byte of an ARGB
+        // bitmap at zero, and that zero alpha would blank the image on encode.
+        var bitmap = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format32bppRgb);
         try
         {
             using var graphics = Graphics.FromImage(bitmap);
@@ -157,7 +210,7 @@ public static class ScreenCapture
             Thread.Sleep(RestoreSettleMilliseconds);
         }
 
-        var bitmap = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format32bppArgb);
+        var bitmap = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format32bppRgb);
         try
         {
             using var graphics = Graphics.FromImage(bitmap);
