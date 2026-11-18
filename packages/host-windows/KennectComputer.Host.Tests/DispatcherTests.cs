@@ -827,6 +827,49 @@ public sealed class DispatcherTests
     }
 
     [Fact]
+    public async Task SnapshotSavesTheBoundsTheImageWasCapturedFrom()
+    {
+        // The window moves while the tree is being walked. The image was
+        // captured against the pre-walk bounds, so saving the post-walk bounds
+        // would make the live and saved bounds agree while the image still
+        // maps against the old source rectangle.
+        var payload = SampleImages.Payload();
+        var raw = NotepadRawWindow();
+        var moved = raw with { Bounds = new Rect(50, 60, 800, 600) };
+        var api = new FakeWindowApi(raw);
+        var walker = new FakeUiaWalker(onWalk: _ => api.Replace(moved));
+        var harness = NewSelectionHarness(
+            walker,
+            new FakeWindowCapture(payload),
+            exclusions: null,
+            perception: null,
+            desktop: null,
+            api: api);
+        var info = harness.Registry.Register(raw);
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("snapshot", $$"""{"windowId":"{{info.WindowId}}","image":true}"""));
+
+        Assert.True(response.TryGetProperty("result", out _));
+        Assert.True(harness.Snapshots.TryGetState(info.WindowId, out var state));
+        Assert.NotNull(state?.Image);
+
+        // The saved bounds are the ones the capture used, not where the window
+        // ended up, so an image-space action detects the move.
+        Assert.Equal(raw.Bounds.X, state!.WindowBounds.X);
+        Assert.Equal(raw.Bounds.Y, state.WindowBounds.Y);
+        Assert.Equal(raw.Bounds.Width, state.WindowBounds.Width);
+        Assert.Equal(raw.Bounds.Height, state.WindowBounds.Height);
+
+        harness.Selection.Select(info);
+        var click = await harness.Dispatcher.HandleAsync(
+            Request("action", """{"kind":"click","x":1,"y":1}"""));
+
+        Assert.Equal("STALE_SNAPSHOT", ErrorCodeOf(click));
+        Assert.Empty(harness.Input.Calls);
+    }
+
+    [Fact]
     public async Task SnapshotVisionModeStillCapturesTheImage()
     {
         var payload = SampleImages.Payload();

@@ -472,7 +472,12 @@ public sealed class JsonRpcDispatcher
         }
 
         capture.Snapshot.Window = current.Info;
-        _snapshots.Save(windowId, capture.Snapshot, capture.NodeMap, current.Info.Bounds);
+
+        // Save the bounds the capture actually used. Using the post-walk
+        // bounds would make the live and saved bounds agree while the image
+        // still maps against the pre-walk source rectangle, letting a
+        // mid-walk move slip past the image-space stale check.
+        _snapshots.Save(windowId, capture.Snapshot, capture.NodeMap, resolved.Info.Bounds);
         return Success(id, capture.Snapshot);
     }
 
