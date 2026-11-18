@@ -10,7 +10,7 @@ public sealed class SnapshotTests
     {
         var walker = new FakeUiaWalker(emptyFirst: true);
 
-        var snapshot = NewSnapshotter(walker).Snapshot(1, new SnapshotOptions(), CancellationToken.None);
+        var snapshot = NewSnapshotter(walker).Snapshot(1, DefaultBounds, new SnapshotOptions(), CancellationToken.None);
 
         Assert.Equal(2, walker.Calls);
         Assert.Null(snapshot.Warning);
@@ -29,7 +29,7 @@ public sealed class SnapshotTests
         var focuses = new List<int>();
 
         var snapshot = NewSnapshotter(walker, waits, focuses)
-            .Snapshot((nint)42, new SnapshotOptions(), CancellationToken.None);
+            .Snapshot((nint)42, DefaultBounds, new SnapshotOptions(), CancellationToken.None);
 
         Assert.Equal(4, walker.Calls);
         Assert.Equal(3, waits.Count);
@@ -45,7 +45,7 @@ public sealed class SnapshotTests
         var walker = new FakeUiaWalker();
         var waits = new List<int>();
 
-        var snapshot = NewSnapshotter(walker, waits).Snapshot(1, new SnapshotOptions(), CancellationToken.None);
+        var snapshot = NewSnapshotter(walker, waits).Snapshot(1, DefaultBounds, new SnapshotOptions(), CancellationToken.None);
 
         Assert.Equal(1, walker.Calls);
         Assert.Empty(waits);
@@ -58,7 +58,7 @@ public sealed class SnapshotTests
         var walker = new FakeUiaWalker(alwaysEmpty: true);
 
         var snapshot = NewSnapshotter(walker)
-            .Snapshot(1, new SnapshotOptions { Mode = SnapshotMode.Vision }, CancellationToken.None);
+            .Snapshot(1, DefaultBounds, new SnapshotOptions { Mode = SnapshotMode.Vision }, CancellationToken.None);
 
         Assert.Equal(0, walker.Calls);
         Assert.Empty(snapshot.Nodes);
@@ -68,12 +68,106 @@ public sealed class SnapshotTests
     }
 
     [Fact]
+    public void VisionModeStillCapturesTheRequestedImage()
+    {
+        // Vision mode skips the accessibility walk, but the image is the whole
+        // point of the mode, so the capture seam must still run.
+        var payload = SampleImagePayload();
+        var capture = new FakeWindowCapture(payload);
+        var walker = new FakeUiaWalker(alwaysEmpty: true);
+
+        var snapshot = NewSnapshotter(walker, capture: capture)
+            .Snapshot(
+                1,
+                DefaultBounds,
+                new SnapshotOptions { Mode = SnapshotMode.Vision, Image = true, ImageLongEdge = 1024 },
+                CancellationToken.None);
+
+        Assert.Equal(0, walker.Calls);
+        Assert.Same(payload, snapshot.Image);
+        var call = Assert.Single(capture.Calls);
+        Assert.Equal(1024, call.ImageLongEdge);
+        Assert.True(call.Enabled);
+    }
+
+    [Fact]
+    public void AttachesTheRequestedImageToTheSnapshot()
+    {
+        var payload = SampleImagePayload();
+        var capture = new FakeWindowCapture(payload);
+
+        var snapshot = NewSnapshotter(new FakeUiaWalker(), capture: capture)
+            .Snapshot(
+                (nint)42,
+                DefaultBounds,
+                new SnapshotOptions { Image = true, ImageLongEdge = 1024 },
+                CancellationToken.None);
+
+        Assert.Same(payload, snapshot.Image);
+        Assert.NotEmpty(snapshot.Nodes);
+        var call = Assert.Single(capture.Calls);
+        Assert.Equal((nint)42, call.Hwnd);
+        Assert.Same(DefaultBounds, call.Bounds);
+        Assert.Equal(1024, call.ImageLongEdge);
+        Assert.True(call.Enabled);
+    }
+
+    [Fact]
+    public void OmitsTheImageWhenTheCallerDidNotRequestIt()
+    {
+        var capture = new FakeWindowCapture(SampleImagePayload());
+
+        var snapshot = NewSnapshotter(new FakeUiaWalker(), capture: capture)
+            .Snapshot(1, DefaultBounds, new SnapshotOptions(), CancellationToken.None);
+
+        Assert.Empty(capture.Calls);
+        Assert.Null(snapshot.Image);
+    }
+
+    [Fact]
+    public void KeepsTheSnapshotWhenTheImageCaptureFails()
+    {
+        // ScreenCapture.Capture returns null on failure instead of throwing;
+        // a failed image must never fail the accessibility snapshot or add a
+        // warning.
+        var capture = new FakeWindowCapture(payload: null);
+
+        var snapshot = NewSnapshotter(new FakeUiaWalker(), capture: capture)
+            .Snapshot(1, DefaultBounds, new SnapshotOptions { Image = true }, CancellationToken.None);
+
+        Assert.Single(capture.Calls);
+        Assert.Null(snapshot.Image);
+        Assert.Null(snapshot.Warning);
+        Assert.NotEmpty(snapshot.Nodes);
+    }
+
+    [Fact]
+    public void TheEmptyTreeWarningStillCarriesTheRequestedImage()
+    {
+        // An empty accessibility tree is the vision-fallback case; the image is
+        // the fallback, so it must still be attached to the warning snapshot.
+        var payload = SampleImagePayload();
+        var capture = new FakeWindowCapture(payload);
+
+        var snapshot = NewSnapshotter(
+                new FakeUiaWalker(alwaysEmpty: true),
+                waits: [],
+                focuses: [],
+                capture: capture)
+            .Snapshot(1, DefaultBounds, new SnapshotOptions { Image = true }, CancellationToken.None);
+
+        Assert.Same(payload, snapshot.Image);
+        Assert.Equal("accessibility tree empty; vision fallback required", snapshot.Warning);
+        Assert.Empty(snapshot.Nodes);
+    }
+
+    [Fact]
     public void GenerationIncrementsOnEverySnapshot()
     {
         var snapshotter = NewSnapshotter(new FakeUiaWalker());
 
-        var first = snapshotter.Snapshot(1, new SnapshotOptions(), CancellationToken.None);
-        var second = snapshotter.Snapshot(1, new SnapshotOptions(), CancellationToken.None);
+        var first = snapshotter.Snapshot(1, DefaultBounds, new SnapshotOptions(), CancellationToken.None);
+        var second = snapshotter.Snapshot(1, DefaultBounds, new SnapshotOptions(), CancellationToken.None);
 
         Assert.Equal(1, first.Generation);
         Assert.Equal(2, second.Generation);
@@ -105,7 +199,7 @@ public sealed class SnapshotTests
         };
 
         var snapshot = new UiaSnapshotter(new FakeUiaWalker(tree), _ => { }, _ => { })
-            .Snapshot(1, new SnapshotOptions(), CancellationToken.None);
+            .Snapshot(1, DefaultBounds, new SnapshotOptions(), CancellationToken.None);
 
         Assert.True(snapshot.Modal);
         Assert.Equal("n1:1", snapshot.FocusedNodeId);
@@ -126,7 +220,7 @@ public sealed class SnapshotTests
         };
 
         var snapshot = new UiaSnapshotter(new FakeUiaWalker(tree), _ => { }, _ => { })
-            .Snapshot(1, new SnapshotOptions(), CancellationToken.None);
+            .Snapshot(1, DefaultBounds, new SnapshotOptions(), CancellationToken.None);
 
         Assert.False(snapshot.Modal);
         Assert.Empty(snapshot.Nodes);
@@ -141,7 +235,7 @@ public sealed class SnapshotTests
         var tree = new TreeModel { Role = "window", Children = [shown, hidden] };
 
         var capture = new UiaSnapshotter(new FakeUiaWalker(tree), _ => { }, _ => { })
-            .Capture(1, new SnapshotOptions(), CancellationToken.None);
+            .Capture(1, DefaultBounds, new SnapshotOptions(), CancellationToken.None);
 
         var node = Assert.Single(capture.Snapshot.Nodes);
         Assert.Equal("n1:1", node.NodeId);
@@ -214,6 +308,7 @@ public sealed class SnapshotTests
         var snapshot = new UiaSnapshotter(new WindowsUiaWalker(), _ => { }, _ => { })
             .Snapshot(
                 window.Handle,
+                window.Bounds,
                 new SnapshotOptions { Mode = SnapshotMode.A11y },
                 CancellationToken.None);
 
@@ -248,14 +343,56 @@ public sealed class SnapshotTests
         }
     }
 
+    private static readonly Rect DefaultBounds = new(0, 0, 800, 600);
+
+    private static ImagePayload SampleImagePayload() => SampleImages.Payload();
+
     private static UiaSnapshotter NewSnapshotter(
         IUiaWalker walker,
         List<int>? waits = null,
-        List<int>? focuses = null)
-        => new(
+        List<int>? focuses = null,
+        FakeWindowCapture? capture = null)
+    {
+        WindowCapture? captureImage = capture is null ? null : capture.Capture;
+        return new(
             walker,
             hwnd => focuses?.Add((int)hwnd),
-            _ => waits?.Add(1));
+            _ => waits?.Add(1),
+            captureImage);
+    }
+}
+
+/// <summary>Records the snapshotter's image captures and returns a fixed payload.</summary>
+internal sealed class FakeWindowCapture
+{
+    private readonly ImagePayload? _payload;
+
+    public FakeWindowCapture(ImagePayload? payload = null)
+    {
+        _payload = payload;
+    }
+
+    public List<CaptureCall> Calls { get; } = [];
+
+    public ImagePayload? Capture(nint hwnd, Rect bounds, int imageLongEdge, bool enabled)
+    {
+        Calls.Add(new CaptureCall(hwnd, bounds, imageLongEdge, enabled));
+        return enabled ? _payload : null;
+    }
+}
+
+internal sealed record CaptureCall(nint Hwnd, Rect Bounds, int ImageLongEdge, bool Enabled);
+
+internal static class SampleImages
+{
+    /// <summary>A protocol-shaped payload; unit tests never decode its data.</summary>
+    public static ImagePayload Payload() => new()
+    {
+        Data = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+        MimeType = "image/png",
+        Scale = 1.5,
+        SourceBounds = new Rect(0, 0, 800, 600),
+    };
 }
 
 /// <summary>
@@ -269,20 +406,25 @@ internal sealed class OwnedTestWindow : IDisposable
     private readonly Form _form;
     private readonly Thread _thread;
 
-    private OwnedTestWindow(Form form, Thread thread, nint handle)
+    private OwnedTestWindow(Form form, Thread thread, nint handle, Rect bounds)
     {
         _form = form;
         _thread = thread;
         Handle = handle;
+        Bounds = bounds;
     }
 
     public nint Handle { get; }
+
+    /// <summary>The window's outer bounds in screen pixels, as reported by WinForms.</summary>
+    public Rect Bounds { get; }
 
     public static OwnedTestWindow Start()
     {
         var ready = new ManualResetEventSlim(initialState: false);
         Form? form = null;
         nint handle = 0;
+        var bounds = new Rect();
 
         var thread = new Thread(() =>
         {
@@ -331,6 +473,11 @@ internal sealed class OwnedTestWindow : IDisposable
             form.Shown += (_, _) =>
             {
                 handle = form.Handle;
+                bounds = new Rect(
+                    form.Bounds.X,
+                    form.Bounds.Y,
+                    form.Bounds.Width,
+                    form.Bounds.Height);
                 ready.Set();
             };
 
@@ -349,7 +496,7 @@ internal sealed class OwnedTestWindow : IDisposable
             throw new TimeoutException("The test-owned window did not appear.");
         }
 
-        return new OwnedTestWindow(form!, thread, handle);
+        return new OwnedTestWindow(form!, thread, handle, bounds);
     }
 
     public void Dispose()

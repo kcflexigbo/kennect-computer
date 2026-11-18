@@ -296,18 +296,72 @@ public sealed class DispatcherTests
     }
 
     [Fact]
-    public async Task SnapshotAcceptsTheImageFlagWithoutCapturing()
+    public async Task SnapshotIncludesTheImageOnlyWhenRequested()
     {
-        // Image capture arrives with Task 9; the flag is accepted now and the
-        // image stays absent from the snapshot payload.
-        var harness = NewSelectionHarness(NotepadRawWindow());
-        var info = harness.Registry.Register(NotepadRawWindow());
+        var payload = SampleImages.Payload();
+        var capture = new FakeWindowCapture(payload);
+        var raw = NotepadRawWindow();
+        var harness = NewSelectionHarness(new FakeUiaWalker(), capture, raw);
+        var info = harness.Registry.Register(raw);
+
+        var withoutImage = await harness.Dispatcher.HandleAsync(
+            Request("snapshot", $$"""{"windowId":"{{info.WindowId}}"}"""));
+
+        Assert.False(withoutImage.GetProperty("result").TryGetProperty("image", out _));
+        Assert.Empty(capture.Calls);
+
+        var withImage = await harness.Dispatcher.HandleAsync(
+            Request("snapshot", $$"""{"windowId":"{{info.WindowId}}","image":true}"""));
+
+        var image = withImage.GetProperty("result").GetProperty("image");
+        Assert.Equal(payload.Data, image.GetProperty("data").GetString());
+        Assert.Equal("image/png", image.GetProperty("mimeType").GetString());
+        Assert.Equal(1.5, image.GetProperty("scale").GetDouble());
+        Assert.Equal(800, image.GetProperty("sourceBounds").GetProperty("width").GetInt32());
+
+        // The dispatcher must capture the resolved window's authoritative bounds.
+        var call = Assert.Single(capture.Calls);
+        Assert.Equal(raw.Hwnd, call.Hwnd);
+        Assert.Equal(raw.Bounds.X, call.Bounds.X);
+        Assert.Equal(raw.Bounds.Y, call.Bounds.Y);
+        Assert.Equal(raw.Bounds.Width, call.Bounds.Width);
+        Assert.Equal(raw.Bounds.Height, call.Bounds.Height);
+        Assert.True(call.Enabled);
+    }
+
+    [Fact]
+    public async Task SnapshotVisionModeStillCapturesTheImage()
+    {
+        var payload = SampleImages.Payload();
+        var capture = new FakeWindowCapture(payload);
+        var raw = NotepadRawWindow();
+        var harness = NewSelectionHarness(new FakeUiaWalker(alwaysEmpty: true), capture, raw);
+        var info = harness.Registry.Register(raw);
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("snapshot", $$"""{"windowId":"{{info.WindowId}}","mode":"vision","image":true}"""));
+
+        var result = response.GetProperty("result");
+        Assert.Equal(0, result.GetProperty("nodes").GetArrayLength());
+        Assert.Equal(0, harness.Walker.Calls);
+        Assert.Equal(payload.Data, result.GetProperty("image").GetProperty("data").GetString());
+    }
+
+    [Fact]
+    public async Task SnapshotSurvivesAFailedImageCapture()
+    {
+        var capture = new FakeWindowCapture(payload: null);
+        var raw = NotepadRawWindow();
+        var harness = NewSelectionHarness(new FakeUiaWalker(), capture, raw);
+        var info = harness.Registry.Register(raw);
 
         var response = await harness.Dispatcher.HandleAsync(
             Request("snapshot", $$"""{"windowId":"{{info.WindowId}}","image":true}"""));
 
         var result = response.GetProperty("result");
         Assert.False(result.TryGetProperty("image", out _));
+        Assert.False(result.TryGetProperty("warning", out _));
+        Assert.Equal(2, result.GetProperty("nodes").GetArrayLength());
     }
 
     [Fact]
@@ -354,9 +408,15 @@ public sealed class DispatcherTests
             $$"""{"jsonrpc":"2.0","id":2,"method":"{{method}}","params":{{parametersJson}}}""").RootElement;
 
     private static SelectionHarness NewSelectionHarness(params RawWindow[] windows)
-        => NewSelectionHarness(new FakeUiaWalker(), windows);
+        => NewSelectionHarness(new FakeUiaWalker(), new FakeWindowCapture(), windows);
 
     private static SelectionHarness NewSelectionHarness(IUiaWalker walker, params RawWindow[] windows)
+        => NewSelectionHarness(walker, new FakeWindowCapture(), windows);
+
+    private static SelectionHarness NewSelectionHarness(
+        IUiaWalker walker,
+        FakeWindowCapture capture,
+        params RawWindow[] windows)
     {
         var tokens = TokenStore.CreateForTests(NewTempDir());
         tokens.Rotate();
@@ -379,10 +439,10 @@ public sealed class DispatcherTests
             enumerator,
             selection,
             registry,
-            NewSnapshotter(walker),
+            NewSnapshotter(walker, capture),
             new SnapshotStore());
 
-        return new SelectionHarness(dispatcher, registry, focus, fakeWalker);
+        return new SelectionHarness(dispatcher, registry, focus, fakeWalker, capture);
     }
 
     private static JsonRpcDispatcher NewDispatcher(TokenStore tokens, FakeDesktopState? desktop = null)
@@ -407,14 +467,18 @@ public sealed class DispatcherTests
             new SnapshotStore());
     }
 
-    private static UiaSnapshotter NewSnapshotter(IUiaWalker walker)
-        => new(walker, _ => { }, _ => { });
+    private static UiaSnapshotter NewSnapshotter(IUiaWalker walker, FakeWindowCapture? capture = null)
+    {
+        WindowCapture? captureImage = capture is null ? null : capture.Capture;
+        return new(walker, _ => { }, _ => { }, captureImage);
+    }
 
     private sealed record SelectionHarness(
         JsonRpcDispatcher Dispatcher,
         WindowRegistry Registry,
         FakeWin32 Focus,
-        FakeUiaWalker Walker);
+        FakeUiaWalker Walker,
+        FakeWindowCapture Capture);
 
     private static string NewTempDir()
     {

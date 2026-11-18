@@ -1,3 +1,4 @@
+using KennectComputer.Host.Capture;
 using KennectComputer.Host.Protocol;
 using KennectComputer.Host.Windows;
 
@@ -11,6 +12,17 @@ public interface IUiaWalker
 {
     TreeModel? Walk(nint hwnd, SnapshotOptions options, CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// The platform seam for capturing the optional snapshot image. Tests
+/// substitute a deterministic delegate; the host uses <see cref="ScreenCapture"/>.
+/// Returns null when the image is not requested or capture fails.
+/// </summary>
+public delegate ImagePayload? WindowCapture(
+    nint hwnd,
+    Rect bounds,
+    int imageLongEdge,
+    bool enabled);
 
 /// <summary>A snapshot plus the node map needed to act on its node IDs later.</summary>
 public sealed record SnapshotCapture(
@@ -42,12 +54,14 @@ public sealed class UiaSnapshotter
     private readonly IUiaWalker _walker;
     private readonly Action<nint> _focusWindow;
     private readonly Action<CancellationToken> _wait;
+    private readonly WindowCapture _captureImage;
     private int _generation;
 
     public UiaSnapshotter(
         IUiaWalker walker,
         Action<nint>? focusWindow = null,
-        Action<CancellationToken>? wait = null)
+        Action<CancellationToken>? wait = null,
+        WindowCapture? capture = null)
     {
         _walker = walker ?? throw new ArgumentNullException(nameof(walker));
         _focusWindow = focusWindow ?? (hwnd => FocusApi.SetForegroundWindow(hwnd));
@@ -56,16 +70,23 @@ public sealed class UiaSnapshotter
             cancellationToken.WaitHandle.WaitOne(WarmupDelay);
             cancellationToken.ThrowIfCancellationRequested();
         });
+        _captureImage = capture ?? ScreenCapture.Capture;
     }
 
-    public Snapshot Snapshot(nint hwnd, SnapshotOptions options, CancellationToken cancellationToken)
-        => Capture(hwnd, options, cancellationToken).Snapshot;
+    public Snapshot Snapshot(
+        nint hwnd,
+        Rect bounds,
+        SnapshotOptions options,
+        CancellationToken cancellationToken)
+        => Capture(hwnd, bounds, options, cancellationToken).Snapshot;
 
     public SnapshotCapture Capture(
         nint hwnd,
+        Rect bounds,
         SnapshotOptions options,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(bounds);
         ArgumentNullException.ThrowIfNull(options);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -73,9 +94,15 @@ public sealed class UiaSnapshotter
 
         if (options.Mode == SnapshotMode.Vision)
         {
-            // Vision-only callers explicitly asked to skip structure.
+            // Vision-only callers explicitly asked to skip structure, but the
+            // image is the whole point of that mode, so capture it anyway.
             return new SnapshotCapture(
-                new Snapshot { Generation = generation, Nodes = [] },
+                new Snapshot
+                {
+                    Generation = generation,
+                    Nodes = [],
+                    Image = CaptureImage(hwnd, bounds, options),
+                },
                 EmptyNodeMap);
         }
 
@@ -106,8 +133,12 @@ public sealed class UiaSnapshotter
             }
         }
 
+        var image = CaptureImage(hwnd, bounds, options);
+
         if (tree is null || slice is null || slice.Nodes.Count == 0)
         {
+            // The empty tree is the vision-fallback case, so the image the
+            // caller asked for still accompanies the warning.
             return new SnapshotCapture(
                 new Snapshot
                 {
@@ -116,6 +147,7 @@ public sealed class UiaSnapshotter
                     Nodes = [],
                     TotalNodes = slice?.TotalNodes ?? 0,
                     Truncated = slice?.Truncated ?? false,
+                    Image = image,
                     Warning = EmptyTreeWarning,
                 },
                 EmptyNodeMap);
@@ -130,9 +162,18 @@ public sealed class UiaSnapshotter
                 Nodes = [.. slice.Nodes],
                 TotalNodes = slice.TotalNodes,
                 Truncated = slice.Truncated,
+                Image = image,
             },
             slice.NodeMap);
     }
+
+    /// <summary>
+    /// Captures the optional image. <see cref="ScreenCapture.Capture"/> never
+    /// throws and returns null when capture fails, so the accessibility
+    /// snapshot and its warning are unaffected.
+    /// </summary>
+    private ImagePayload? CaptureImage(nint hwnd, Rect bounds, SnapshotOptions options)
+        => options.Image ? _captureImage(hwnd, bounds, options.ImageLongEdge, enabled: true) : null;
 
     private static bool AnyVisibleModal(TreeModel node)
         => (!node.Offscreen && node.IsModal) || node.Children.Any(AnyVisibleModal);

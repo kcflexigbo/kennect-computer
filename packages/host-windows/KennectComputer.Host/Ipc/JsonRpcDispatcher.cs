@@ -315,7 +315,13 @@ public sealed class JsonRpcDispatcher
             Image = image,
         };
 
-        var capture = _snapshotter.Capture(resolved.Hwnd, options, CancellationToken.None);
+        // The registry's freshly resolved bounds are authoritative for both the
+        // image's sourceBounds and the scale the client maps coordinates with.
+        var capture = _snapshotter.Capture(
+            resolved.Hwnd,
+            resolved.Info.Bounds,
+            options,
+            CancellationToken.None);
 
         // The window can die while the tree is being walked; never report a
         // snapshot for a window the registry can no longer resolve.

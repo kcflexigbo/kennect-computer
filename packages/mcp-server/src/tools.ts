@@ -233,8 +233,9 @@ function createSnapshotDefinition(provider: HostProvider): ToolDefinition {
       "Capture a window's accessibility outline: role, name, identifier, bounds, enabled/focused "
       + "state, supported generic actions, and a node ID valid only for this snapshot generation. "
       + "windowId is required; mode may be a11y, vision, or both; maxDepth and maxNodes cap the "
-      + "outline. image is accepted for forward compatibility and capture arrives with the image "
-      + "milestone. The outline is returned as text and the R18 envelope as structuredContent.",
+      + "outline. Set image to true to also return a downscaled PNG as image content, carrying "
+      + "scale and sourceBounds so image coordinates map back to the window. The outline is "
+      + "returned as text and the R18 envelope as structuredContent.",
     inputSchema: snapshotInputSchema,
     inputJsonSchema: {
       type: "object",
@@ -259,7 +260,7 @@ function createSnapshotDefinition(provider: HostProvider): ToolDefinition {
         const host = await provider.ensureHost();
         const output = await snapshotTool(host, args as SnapshotArgs);
         return {
-          content: [{ type: "text", text: output.text }],
+          content: output.content,
           structuredContent: output.result as unknown as Record<string, unknown>,
           isError: !output.result.ok,
         };

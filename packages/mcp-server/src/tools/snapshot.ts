@@ -1,3 +1,4 @@
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { Node, Snapshot } from "@kennect/shared";
 import { SnapshotSchema } from "@kennect/shared/schemas";
 
@@ -26,19 +27,21 @@ export interface SnapshotData {
 }
 
 /**
- * The tool result plus the human-readable outline that becomes the MCP text
- * content. Failures carry the JSON envelope as text instead.
+ * The tool result plus the MCP content blocks: the human-readable outline as
+ * text, followed by the PNG as an image block when the host returned one.
+ * Failures carry the JSON envelope as text instead.
  */
 export interface SnapshotToolOutput {
   result: ToolResult<SnapshotData>;
   text: string;
+  content: CallToolResult["content"];
 }
 
 /**
  * `computer_snapshot`: captures a window's accessibility outline through the
  * host `snapshot` method and returns the R18 envelope with the snapshot plus an
- * outline for the model. The image arrives with Task 9; when the host includes
- * one, the tool will add an MCP image content block.
+ * outline for the model. When `image` was requested and the host captured one,
+ * a downscaled PNG is returned as an MCP image content block.
  */
 export async function snapshotTool(
   host: HostRequester,
@@ -68,22 +71,39 @@ export async function snapshotTool(
     const parsed = SnapshotSchema.safeParse(payload);
 
     if (!parsed.success) {
-      const result = failure(
-        "HOST_UNAVAILABLE",
-        "The host returned a snapshot that does not match protocol v1.",
-        { retryable: true },
+      return failureOutput(
+        failure(
+          "HOST_UNAVAILABLE",
+          "The host returned a snapshot that does not match protocol v1.",
+          { retryable: true },
+        ),
       );
-      return { result, text: JSON.stringify(result) };
+    }
+
+    const text = formatSnapshotOutline(parsed.data, args.maxDepth);
+    const content: CallToolResult["content"] = [{ type: "text", text }];
+
+    if (parsed.data.image !== undefined) {
+      content.push({
+        type: "image",
+        data: parsed.data.image.data,
+        mimeType: parsed.data.image.mimeType,
+      });
     }
 
     return {
       result: ok({ snapshot: parsed.data }),
-      text: formatSnapshotOutline(parsed.data, args.maxDepth),
+      text,
+      content,
     };
   } catch (error) {
-    const result = failureFromSnapshotError(error);
-    return { result, text: JSON.stringify(result) };
+    return failureOutput(failureFromSnapshotError(error));
   }
+}
+
+function failureOutput(result: ToolResult<never>): SnapshotToolOutput {
+  const text = JSON.stringify(result);
+  return { result, text, content: [{ type: "text", text }] };
 }
 
 function failureFromSnapshotError(error: unknown): ToolResult<never> {

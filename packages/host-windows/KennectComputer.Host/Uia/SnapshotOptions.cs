@@ -10,8 +10,8 @@ public enum SnapshotMode
 
 /// <summary>
 /// Bounds and defaults for one snapshot (DESIGN §5 and the plan's global
-/// constraints). Image capture itself arrives with Task 9; the flags are
-/// carried now so the protocol shape does not change later.
+/// constraints). <see cref="Image"/> requests the optional PNG; its long edge
+/// defaults to 1568 px and is clamped to 2576 px.
 /// </summary>
 public sealed record SnapshotOptions
 {

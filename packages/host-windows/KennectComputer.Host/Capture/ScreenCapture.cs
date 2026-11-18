@@ -1,0 +1,227 @@
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
+
+using KennectComputer.Host.Protocol;
+using KennectComputer.Host.Uia;
+
+namespace KennectComputer.Host.Capture;
+
+/// <summary>
+/// Captures a window as a downscaled PNG for a snapshot.
+///
+/// The window is rendered with <c>PrintWindow(PW_RENDERFULLCONTENT)</c> first so
+/// occluded windows still capture. When that fails or yields an all-black
+/// bitmap (some apps do while minimized), the window is restored and the
+/// on-screen pixels over its bounds are copied instead. Every failure returns
+/// null: an unavailable image never fails the accessibility snapshot.
+/// </summary>
+public static class ScreenCapture
+{
+    private const uint PwRenderFullContent = 0x00000002;
+    private const int SwRestore = 9;
+    private const int RestoreSettleMilliseconds = 150;
+
+    /// <summary>
+    /// Captures a window's image, or null when capture is disabled or fails.
+    /// <paramref name="bounds"/> are the window's physical screen pixels and
+    /// become the payload's <c>sourceBounds</c>.
+    /// </summary>
+    public static ImagePayload? Capture(
+        nint hwnd,
+        Rect bounds,
+        int imageLongEdge = SnapshotOptions.DefaultImageLongEdge,
+        bool enabled = true)
+    {
+        if (!enabled
+            || hwnd == nint.Zero
+            || bounds is null
+            || bounds.Width <= 0
+            || bounds.Height <= 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            using var bitmap = TryPrintWindow(hwnd, bounds) ?? TryCopyFromScreen(hwnd, bounds);
+            return bitmap is null ? null : Encode(bitmap, imageLongEdge, bounds);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Downscales so the long edge is at most <paramref name="imageLongEdge"/>
+    /// (clamped to <see cref="SnapshotOptions.DefaultMaxImageLongEdge"/>), encodes
+    /// PNG, and reports <c>scale</c> as physical pixels per returned image pixel.
+    /// </summary>
+    public static ImagePayload Encode(Bitmap bitmap, int imageLongEdge, Rect sourceBounds)
+    {
+        ArgumentNullException.ThrowIfNull(bitmap);
+        ArgumentNullException.ThrowIfNull(sourceBounds);
+
+        var longEdge = ClampLongEdge(imageLongEdge);
+        var longest = Math.Max(bitmap.Width, bitmap.Height);
+        var factor = longest > longEdge ? longEdge / (double)longest : 1.0;
+
+        Bitmap? downscaled = null;
+        try
+        {
+            var image = bitmap;
+            if (factor < 1.0)
+            {
+                var width = Math.Max(
+                    1,
+                    (int)Math.Round(bitmap.Width * factor, MidpointRounding.AwayFromZero));
+                var height = Math.Max(
+                    1,
+                    (int)Math.Round(bitmap.Height * factor, MidpointRounding.AwayFromZero));
+                downscaled = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+                using var graphics = Graphics.FromImage(downscaled);
+                graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                graphics.DrawImage(bitmap, new Rectangle(0, 0, width, height));
+                image = downscaled;
+            }
+
+            using var stream = new MemoryStream();
+            image.Save(stream, ImageFormat.Png);
+
+            return new ImagePayload
+            {
+                Data = Convert.ToBase64String(stream.ToArray()),
+                MimeType = "image/png",
+                Scale = sourceBounds.Width / (double)image.Width,
+                SourceBounds = new Rect(
+                    sourceBounds.X,
+                    sourceBounds.Y,
+                    sourceBounds.Width,
+                    sourceBounds.Height),
+            };
+        }
+        finally
+        {
+            downscaled?.Dispose();
+        }
+    }
+
+    private static int ClampLongEdge(int imageLongEdge)
+        => Math.Clamp(
+            imageLongEdge <= 0 ? SnapshotOptions.DefaultImageLongEdge : imageLongEdge,
+            1,
+            SnapshotOptions.DefaultMaxImageLongEdge);
+
+    private static Bitmap? TryPrintWindow(nint hwnd, Rect bounds)
+    {
+        var bitmap = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format32bppArgb);
+        try
+        {
+            using var graphics = Graphics.FromImage(bitmap);
+            var hdc = graphics.GetHdc();
+            bool printed;
+            try
+            {
+                printed = PrintWindow(hwnd, hdc, PwRenderFullContent);
+            }
+            finally
+            {
+                graphics.ReleaseHdc(hdc);
+            }
+
+            if (printed && !IsAllBlack(bitmap))
+            {
+                return bitmap;
+            }
+        }
+        catch (Exception)
+        {
+            // Fall through to the on-screen fallback; Capture returns null when
+            // that also fails.
+        }
+
+        bitmap.Dispose();
+        return null;
+    }
+
+    private static Bitmap? TryCopyFromScreen(nint hwnd, Rect bounds)
+    {
+        // PrintWindow renders black for some windows while they are minimized;
+        // restore them so the on-screen copy has content to grab.
+        if (IsIconic(hwnd))
+        {
+            ShowWindow(hwnd, SwRestore);
+            Thread.Sleep(RestoreSettleMilliseconds);
+        }
+
+        var bitmap = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format32bppArgb);
+        try
+        {
+            using var graphics = Graphics.FromImage(bitmap);
+            graphics.CopyFromScreen(
+                bounds.X,
+                bounds.Y,
+                0,
+                0,
+                new Size(bounds.Width, bounds.Height),
+                CopyPixelOperation.SourceCopy);
+            return bitmap;
+        }
+        catch (Exception)
+        {
+            bitmap.Dispose();
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// True when every pixel is black, which is how some windows report a
+    /// failed <c>PrintWindow</c> render.
+    /// </summary>
+    private static bool IsAllBlack(Bitmap bitmap)
+    {
+        var rectangle = new Rectangle(0, 0, bitmap.Width, bitmap.Height);
+        var data = bitmap.LockBits(rectangle, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+        try
+        {
+            var bytes = new byte[data.Stride * data.Height];
+            Marshal.Copy(data.Scan0, bytes, 0, bytes.Length);
+
+            for (var y = 0; y < data.Height; y++)
+            {
+                var row = y * data.Stride;
+                for (var x = 0; x < data.Width; x++)
+                {
+                    var offset = row + (x * 4);
+
+                    // Ignore the alpha byte: GDI-rendered bitmaps may leave it zero.
+                    if (bytes[offset] != 0 || bytes[offset + 1] != 0 || bytes[offset + 2] != 0)
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
+        finally
+        {
+            bitmap.UnlockBits(data);
+        }
+    }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PrintWindow(nint hwnd, nint hdcBlt, uint flags);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsIconic(nint hwnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ShowWindow(nint hwnd, int nCmdShow);
+}
