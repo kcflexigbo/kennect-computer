@@ -101,6 +101,55 @@ public sealed class CoordinateMapperTests
         Assert.Null(result.Point);
     }
 
+    [Theory]
+    [InlineData(-1.0, 20.0)] // negative x
+    [InlineData(10.0, -1.0)] // negative y
+    [InlineData(1500.0, 20.0)] // at the image's right edge
+    [InlineData(10.0, 1000.0)] // at the image's bottom edge
+    [InlineData(1500.5, 20.0)] // beyond the image width
+    [InlineData(10.0, 1000.5)] // beyond the image height
+    public void ImageSpaceOutsideTheReturnedImageIsInvalid(double x, double y)
+    {
+        // Scale 2.0 over the 3000x2000 source bounds is a 1500x1000 image.
+        var state = StateWithImage(2.0, new Rect(100, 50, 3000, 2000));
+
+        var result = CoordinateMapper.Map(state, WindowAt(WindowBounds), x, y, CoordinateSpace.Image);
+
+        Assert.Equal(ErrorCode.InvalidRequest, result.Error);
+        Assert.Null(result.Point);
+    }
+
+    [Theory]
+    [InlineData(1e300, 20.0)]
+    [InlineData(10.0, 1e300)]
+    public void AFiniteImageCoordinateFarOutsideTheImageIsInvalid(double x, double y)
+    {
+        // 1e300 * scale overflows an int conversion; the extent check must
+        // reject it before any rounding can produce a click elsewhere.
+        var state = StateWithImage(2.0, new Rect(100, 50, 3000, 2000));
+
+        var result = CoordinateMapper.Map(state, WindowAt(WindowBounds), x, y, CoordinateSpace.Image);
+
+        Assert.Equal(ErrorCode.InvalidRequest, result.Error);
+        Assert.Null(result.Point);
+    }
+
+    [Fact]
+    public void NonFiniteImageCoordinatesAreInvalid()
+    {
+        // A NaN fails every ordered comparison, so the extent check must be
+        // written to reject it rather than let it through.
+        var state = StateWithImage(2.0, new Rect(100, 50, 3000, 2000));
+
+        foreach (var (x, y) in new[] { (double.NaN, 20.0), (10.0, double.NaN) })
+        {
+            var result = CoordinateMapper.Map(state, WindowAt(WindowBounds), x, y, CoordinateSpace.Image);
+
+            Assert.Equal(ErrorCode.InvalidRequest, result.Error);
+            Assert.Null(result.Point);
+        }
+    }
+
     [Fact]
     public void ScreenSpaceInsideTheWindowSucceedsEvenWhenBoundsChanged()
     {

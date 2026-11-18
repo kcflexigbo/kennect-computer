@@ -36,11 +36,11 @@ public sealed class CoordinateMapResult
 /// Maps action coordinates to physical screen pixels (DESIGN §6.2).
 ///
 /// Image space is relative to the last snapshot's returned image, so the
-/// snapshot must carry the image's scale and source bounds and the window must
-/// not have moved or resized since the snapshot; otherwise the mapping would
-/// silently click the wrong place. Screen space is already physical, so only
-/// the window containment check remains and a moved window is still
-/// addressable.
+/// snapshot must carry the image's scale and source bounds, the point must lie
+/// inside the returned image's pixel extent, and the window must not have moved
+/// or resized since the snapshot; otherwise the mapping would silently click
+/// the wrong place. Screen space is already physical, so only the window
+/// containment check remains and a moved window is still addressable.
 ///
 /// Mapped values are rounded to the nearest whole physical pixel, with midpoints
 /// away from zero, and the window rectangle is treated as half-open in pixels:
@@ -83,6 +83,17 @@ public static class CoordinateMapper
             return CoordinateMapResult.Failed(ErrorCode.StaleSnapshot);
         }
 
+        // Scale is physical pixels per returned image pixel, so the returned
+        // image's extent is the physical source size divided by the scale. A
+        // point outside it was never visible in the image the caller acted on;
+        // rejecting it here also keeps far-out values from overflowing the int
+        // conversion below into an unrelated physical point.
+        if (!WithinImage(x, image.SourceBounds.Width / image.Scale)
+            || !WithinImage(y, image.SourceBounds.Height / image.Scale))
+        {
+            return CoordinateMapResult.Failed(ErrorCode.InvalidRequest);
+        }
+
         return CoordinateMapResult.Success(new Point(
             ToPhysicalPixel(image.SourceBounds.X + (x * image.Scale)),
             ToPhysicalPixel(image.SourceBounds.Y + (y * image.Scale))));
@@ -103,6 +114,14 @@ public static class CoordinateMapper
             ToPhysicalPixel(x),
             ToPhysicalPixel(y)));
     }
+
+    /// <summary>
+    /// Half-open <c>[0, extent)</c> containment of an image-pixel coordinate.
+    /// The ordered comparisons reject NaN too, so a non-finite value can never
+    /// slip through the extent check.
+    /// </summary>
+    private static bool WithinImage(double value, double extent)
+        => value >= 0 && value < extent;
 
     // Rect is a mutable protocol class with reference equality, so the window
     // has moved unless all four whole-pixel fields still match.
