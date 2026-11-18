@@ -63,21 +63,39 @@ function Write-PathStatus {
     Write-Host ('  {0,-18} {1} [{2}]' -f $displayLabel, $Path, $state)
 }
 
-$SessionDir = $env:KENNECT_COMPUTER_SESSION_DIR
-if ([string]::IsNullOrWhiteSpace($SessionDir)) {
-    $localAppData = $env:LOCALAPPDATA
-    if ([string]::IsNullOrWhiteSpace($localAppData)) {
-        $localAppData = Join-Path $HOME 'AppData\Local'
-    }
-    $SessionDir = Join-Path $localAppData 'KennectComputer'
+# The Windows host always publishes session.json/session.token under
+# %LOCALAPPDATA%\KennectComputer; it does not read KENNECT_COMPUTER_SESSION_DIR.
+$HostStateDir = $env:LOCALAPPDATA
+if ([string]::IsNullOrWhiteSpace($HostStateDir)) {
+    $HostStateDir = Join-Path $HOME 'AppData\Local'
 }
-$SessionFile = Join-Path $SessionDir 'session.json'
+$HostStateDir = Join-Path $HostStateDir 'KennectComputer'
+$SessionFile = Join-Path $HostStateDir 'session.json'
+
+# The MCP server does honour the override for discovery and audit. If it points
+# elsewhere, the server cannot see the host's session files.
+$DiscoveryDir = $HostStateDir
+$DiscoveryOverride = $env:KENNECT_COMPUTER_SESSION_DIR
+if (-not [string]::IsNullOrWhiteSpace($DiscoveryOverride)) {
+    try {
+        $DiscoveryDir = [System.IO.Path]::GetFullPath($DiscoveryOverride)
+    }
+    catch {
+        $DiscoveryDir = $DiscoveryOverride
+    }
+}
 
 Write-Host 'Kennect Computer - MCP registration status'
 Write-PathStatus 'MCP config' $McpConfigPath
 Write-PathStatus 'MCP server entry' $McpServerEntry
 Write-PathStatus 'Host executable' $HostExe
 Write-PathStatus 'Host config' $HostConfig
+Write-PathStatus 'Host state dir' $HostStateDir
+
+if (-not [string]::Equals($DiscoveryDir, $HostStateDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+    Write-PathStatus 'MCP discovery dir' $DiscoveryDir
+    Write-Warning ("KENNECT_COMPUTER_SESSION_DIR is set, but the host always publishes its session files under {0}. The MCP server will look in {1}, so tool calls will fail with HOST_UNAVAILABLE. Unset the variable for a working connection." -f $HostStateDir, $DiscoveryDir)
+}
 
 $registered = $false
 $registeredEntry = $null

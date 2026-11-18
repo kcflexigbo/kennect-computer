@@ -128,8 +128,9 @@ $day = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd")
 Get-Content "$env:LOCALAPPDATA\KennectComputer\audit\$day.jsonl" -Tail 10 | ConvertFrom-Json
 ```
 
-Files are named by UTC day. If `KENNECT_COMPUTER_SESSION_DIR` is set, the audit
-directory is `<that directory>\audit`.
+Files are named by UTC day. If `KENNECT_COMPUTER_SESSION_DIR` is set, the MCP
+server writes audit files to `<that directory>\audit`; the Windows host still
+publishes its own session files under `%LOCALAPPDATA%\KennectComputer`.
 
 ## Development loop
 
@@ -181,8 +182,13 @@ Each line contains exactly:
 - Audit writes are best-effort. A disk or permission failure is reported to
   stderr and never fails a tool call; stdout belongs to the stdio transport.
 
-Set `KENNECT_COMPUTER_SESSION_DIR` to redirect both the host session files and
-the audit directory (used by tests and isolated development runs).
+`KENNECT_COMPUTER_SESSION_DIR` redirects the MCP server's session-discovery
+path and the audit directory (used by tests and isolated development runs).
+The Windows host does not honour this variable: it always publishes
+`session.json` and `session.token` under `%LOCALAPPDATA%\KennectComputer`.
+Setting the override to any other directory makes the MCP server look
+somewhere the host never writes, so tool calls fail with `HOST_UNAVAILABLE`.
+Leave it unset for a live host connection.
 
 ## Configuration
 
@@ -197,7 +203,7 @@ Environment variables:
 |---|---|
 | `KENNECT_HOST_PATH` | Host executable the MCP server may spawn |
 | `KENNECT_COMPUTER_CONFIG` | Config file passed to the host |
-| `KENNECT_COMPUTER_SESSION_DIR` | Overrides the session and audit data directory |
+| `KENNECT_COMPUTER_SESSION_DIR` | Overrides the MCP server's session-discovery and audit directory; the Windows host still uses `%LOCALAPPDATA%\KennectComputer` |
 
 ## Safety model
 
@@ -222,14 +228,16 @@ Environment variables:
   the repository root, restart Claude Code, and run
   `scripts/run-dev.ps1 -NoHost` to see which path is missing.
 - **`HOST_UNAVAILABLE`.** The host is not running or `KENNECT_HOST_PATH` is
-  wrong. Run `scripts/run-dev.ps1` and confirm the tray icon.
+  wrong. Run `scripts/run-dev.ps1` and confirm the tray icon. If the MCP
+  server's environment sets `KENNECT_COMPUTER_SESSION_DIR`, unset it: the host
+  does not honour the override, so the server looks in the wrong directory.
 - **`UNAUTHORIZED`.** The token file is stale or unreadable. Exit the host from
   the tray and start it again so `session.json` and `session.token` rotate.
 - **`LOCKED_BY_OTHER_SESSION`.** Another MCP session or host owns control.
   Close the other session, or exit the host from the tray and restart it.
 - **Nothing is audited.** `KENNECT_COMPUTER_SESSION_DIR` may be redirecting the
-  directory; check `<session dir>\audit`. Audit failures are reported on stderr
-  in the MCP server's log, never on stdout.
+  MCP server's directory; check `<override dir>\audit`. Audit failures are
+  reported on stderr in the MCP server's log, never on stdout.
 - **Stop hotkey does nothing.** Another app may own the combination; the tray
   tooltip reports hotkey registration failure. Use the tray **Stop** item.
 
