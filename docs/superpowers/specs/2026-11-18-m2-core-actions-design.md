@@ -131,10 +131,15 @@ The existing `NodeId`/`SnapshotStore` generation rules remain the authority.
 ### 6.3 Click
 
 - `nodeId` (preferred): invoke the supported activation action
-  (Invoke/Toggle/SelectionItem/ExpandCollapse); otherwise click the node's
-  bounds center after foreground verification.
+  (Invoke/Toggle/SelectionItem/ExpandCollapse) for a plain left single click
+  with no modifiers; otherwise click the node's bounds center after foreground
+  verification. A non-empty modifier list, a non-left button, or a count other
+  than one always takes the bounds-center mouse path.
 - Coordinates: click at the mapped point with the requested button, count, and
-  modifiers.
+  modifiers. Modifiers are pressed before the clicks and released in reverse
+  in a `finally`.
+- The bounds-center fallback requires non-empty live bounds and a center inside
+  the verified-foreground window; otherwise it returns `STALE_SNAPSHOT`.
 - The host verifies foreground before each click. Focus refusal returns
   `FOCUS_REFUSED` and sends no input.
 - Click results report the target window and `needsObservation: true`.
@@ -142,8 +147,13 @@ The existing `NodeId`/`SnapshotStore` generation rules remain the authority.
 ### 6.4 Type
 
 - `method: "paste"` (default): save the clipboard, set the text, send
-  Ctrl+V, restore the clipboard. The save/restore is best-effort; failures do
-  not leave the user's clipboard holding the typed text.
+  Ctrl+V, wait (bounded, 2 s) for the target to consume the paste, then restore
+  the saved clipboard in a `finally`. A target whose content cannot be read
+  falls back to a bounded input-queue drain. Paste fails with `INVALID_REQUEST`
+  before writing when the clipboard cannot be read or holds non-text content
+  (an image, copied files, or ANSI-only text), because a text-only restore
+  would destroy it. The restore is best-effort; if another app holds the
+  clipboard, the typed text may remain until that app releases it.
 - `method: "value"`: set the control's ValuePattern where supported.
 - `method: "keys"`: type character by character with SendInput
   `KEYEVENTF_UNICODE`; slower, fallback only.
@@ -188,7 +198,8 @@ The existing `NodeId`/`SnapshotStore` generation rules remain the authority.
 - Polls on a bounded interval with a deadline; honors cancellation.
 - A timeout returns `ACTION_TIMEOUT` with a message identifying the condition;
   no new error code is introduced.
-- Wait does not send input and may run concurrently with other read-only calls.
+- Wait does not send input. The host client serializes every request, so a
+  long wait blocks other host calls until it returns.
 
 ### 6.9 Read text
 
@@ -229,7 +240,8 @@ The existing `NodeId`/`SnapshotStore` generation rules remain the authority.
 - Every input action checks the control token before each event/step; a stop
   aborts the sequence and returns `ACTION_TIMEOUT` with "The operation was
   stopped." (the existing M1 mapping).
-- Input actions are serialized by the host; read-only actions may overlap.
+- The host client serializes every request, so a read-only call does not
+  overlap a long wait or an input action.
 - The control session and single-root window rules from M1 remain.
 
 ### 6.13 Audit
@@ -237,7 +249,10 @@ The existing `NodeId`/`SnapshotStore` generation rules remain the authority.
 - Every M2 tool is audited through the existing MCP choke point.
 - `AuditEntry` gains optional `textLength` and `textSha256` for type actions.
   No text, message, title, or content is written.
-- `nodeId` is recorded when the action targeted a node.
+- `nodeId` is recorded when the action targeted a node, and `x`/`y` when it
+  targeted coordinates (DESIGN §14).
+- The acted-on window ID and process name are recorded from the action result,
+  including a batch's first step with a window.
 
 ### 6.14 Host IPC and MCP tools
 

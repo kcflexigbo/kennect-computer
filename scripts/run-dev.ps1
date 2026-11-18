@@ -5,8 +5,8 @@
 
 .DESCRIPTION
     Prints whether .mcp.json registers kennect-computer, whether the built MCP
-    entry and host executable exist, and the six M1 tool names. Then starts the
-    host so the tray icon is visible. The host keeps running after this script
+    entry and host executable exist, and the M1 and M2 tool names. Then starts
+    the host so the tray icon is visible. The host keeps running after this script
     returns; stop it from the tray Exit item.
 
 .PARAMETER NoHost
@@ -33,7 +33,15 @@ $ToolNames = @(
     'computer_select',
     'computer_snapshot',
     'computer_focus',
-    'computer_stop'
+    'computer_stop',
+    'computer_click',
+    'computer_type',
+    'computer_key',
+    'computer_scroll',
+    'computer_find',
+    'computer_wait',
+    'computer_read_text',
+    'computer_batch'
 )
 
 function Get-PropertyValue {
@@ -125,7 +133,7 @@ else {
 }
 
 Write-Host ''
-Write-Host 'M1 tools:'
+Write-Host 'Tools:'
 foreach ($toolName in $ToolNames) {
     Write-Host "  - $toolName"
 }

@@ -62,7 +62,15 @@ approval prompts, merge the allowlist the install script prints into
       "mcp__kennect-computer__computer_select",
       "mcp__kennect-computer__computer_snapshot",
       "mcp__kennect-computer__computer_focus",
-      "mcp__kennect-computer__computer_stop"
+      "mcp__kennect-computer__computer_stop",
+      "mcp__kennect-computer__computer_click",
+      "mcp__kennect-computer__computer_type",
+      "mcp__kennect-computer__computer_key",
+      "mcp__kennect-computer__computer_scroll",
+      "mcp__kennect-computer__computer_find",
+      "mcp__kennect-computer__computer_wait",
+      "mcp__kennect-computer__computer_read_text",
+      "mcp__kennect-computer__computer_batch"
     ]
   }
 }
@@ -74,8 +82,8 @@ Then start the host and check the registration:
 powershell -ExecutionPolicy Bypass -File scripts/run-dev.ps1
 ```
 
-`run-dev.ps1` verifies the registration and build outputs, prints the six tool
-names, and starts the host so its tray icon is visible. It leaves the host
+`run-dev.ps1` verifies the registration and build outputs, prints the M1 and M2
+tool names, and starts the host so its tray icon is visible. It leaves the host
 running; stop it from the tray **Exit** item. `-NoHost` prints the status
 without starting anything, which is what automated checks use.
 
@@ -99,8 +107,9 @@ effect.
 The stop hotkey is `Ctrl+Alt+Shift+Esc`; it preempts the current operation
 immediately and is consumed by the host. `computer_stop` is a normal queued host
 call: the host reads it only after the running operation returns, so it cannot
-abort work already in flight and instead cancels the next operation. The tray
-**Stop** item and the hotkey are the immediate preemption paths.
+abort work already in flight. With nothing running it simply succeeds, and the
+session re-arms for the next operation. The tray **Stop** item and the hotkey
+are the immediate preemption paths.
 
 ## M2 tools
 
@@ -148,9 +157,12 @@ Unicode event per UTF-16 code unit and never touches the clipboard.
 `computer_read_text` prefers TextPattern and falls back to ValuePattern. Its
 `maxLength` defaults to 10,000 characters and is capped at 50,000; the result
 reports `length` and `truncated`. `computer_find` returns at most 50 matches by
-default; no matches is a successful empty result, not an error.
-`computer_wait` defaults to a 10,000 ms timeout (1..60,000) and a 100 ms poll;
-reaching the deadline returns `ACTION_TIMEOUT`.
+default (at most 500); no matches is a successful empty result, not an error.
+A find supersedes the stored snapshot generation, so node IDs and image-space
+coordinates from earlier snapshots become stale. `computer_wait` defaults to a
+10,000 ms timeout (1..60,000) and a 100 ms poll; reaching the deadline returns
+`ACTION_TIMEOUT`. Host calls are serialized, so a long wait blocks other host
+calls until it returns.
 
 ### Coordinate spaces
 
@@ -312,8 +324,10 @@ Each line contains exactly:
 {"timestamp":"...","sessionId":"...","tool":"computer_snapshot","windowId":"w_1","process":"notepad","nodeId":"n3:2","result":"ok","durationMs":12}
 ```
 
-- `windowId`, `process`, and `nodeId` are present only when the tool target had
-  them. Window titles and message text are never logged.
+- `windowId` and `process` identify the window the host acted on (including the
+  first step of a batch that reports one); `nodeId` or `x`/`y` identify the
+  target when the tool had one. Window titles and message text are never
+  logged.
 - `computer_type` adds `textLength` (the UTF-8 byte length) and `textSha256`
   (the lowercase hex SHA-256 digest) of the typed text. The text itself is
   never logged, and no other tool logs text: `computer_read_text` records only

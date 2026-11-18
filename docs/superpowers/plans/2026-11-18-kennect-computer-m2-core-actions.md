@@ -29,7 +29,7 @@ This is Plan 2 of 5. It produces working, testable software on its own.
 - Window IDs are opaque and never reused across host starts; node IDs are `n<generation>:<index>` and valid only for the snapshot generation that produced them.
 - Selected window is the action target; actions do not retarget another window.
 - Coordinate spaces: `image` (default; returned image pixel space) and `screen` (absolute physical pixels). Image-space actions require a snapshot with an image; a moved/resized window returns `STALE_SNAPSHOT` unless `space: "screen"`.
-- Input is serialized; read-only calls may run concurrently. The stop hotkey (Ctrl+Alt+Shift+Esc) and tray Stop call `ControlSession.Stop()` and must abort a click/type sequence.
+- The host client serializes every request, so a read-only call waits behind a long wait or input action. The stop hotkey (Ctrl+Alt+Shift+Esc) and tray Stop call `ControlSession.Stop()` and must abort a click/type sequence.
 - `computer_stop` cannot preempt an in-flight request on the same MCP connection; the hotkey/tray are the preemption path.
 - Error codes are the frozen list. `EXPECTATION_FAILED` and `STALE_SNAPSHOT` are the action guards; wait timeouts and stops use `ACTION_TIMEOUT`.
 - Audit: `AuditEntry` gains optional `textLength` and `textSha256` for type actions; never text, message, title, or content.
@@ -374,7 +374,7 @@ git commit -m "feat: click nodes and coordinates"
 **Interfaces:**
 - Consumes: `IUiaNodeResolver`, `ForegroundService`, `IInputSender`, `IClipboard`, `SnapshotStore`, `SelectionStore`, `WindowRegistry`, `ExpectEvaluator`, `TypeRequest`, `ActionResult`.
 - Produces: `TypeAction(...)`; `Task<ActionResult> ExecuteAsync(TypeRequest request, CancellationToken)`.
-- Paste (`method: "paste"`, default): save the clipboard text; set the text; send Ctrl+V (`KeyDown(0x11)`, `KeyDown(0x56)`, `KeyUp(0x56)`, `KeyUp(0x11)`); restore the saved text in `finally`. Value: resolve the node and `TrySetValue`; if unsupported, fall back to paste. Keys: `UnicodeText` per character. Optional `nodeId` focuses the live node first. Expect runs before input. A stale node returns `STALE_SNAPSHOT`; focus refusal returns `FOCUS_REFUSED`; no input on either failure.
+- Paste (`method: "paste"`, default): save the clipboard text; set the text; send Ctrl+V (`KeyDown(0x11)`, `KeyDown(0x56)`, `KeyUp(0x56)`, `KeyUp(0x11)`); wait (bounded, 2 s) for the target to consume the paste, polling its value/text when readable and otherwise draining the window's input queue; then restore the saved text in `finally`. Refuse with `INVALID_REQUEST` before writing when the clipboard cannot be read or holds non-text content (an image, files, or ANSI-only text). Value: resolve the node and `TrySetValue`; if unsupported, fall back to paste. Keys: `UnicodeText` per character. Optional `nodeId` focuses the live node first. Expect runs before input. A stale node returns `STALE_SNAPSHOT`; focus refusal returns `FOCUS_REFUSED`; no input on either failure.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -561,7 +561,7 @@ git commit -m "feat: wait for windows, nodes, and text"
 
 **Interfaces:**
 - `BatchAction(ClickAction click, TypeAction type, KeyAction key, ScrollAction scroll, WaitAction wait, ReadTextAction readText, UiaSnapshotter snapshotter, SnapshotStore store, SelectionStore selection, WindowRegistry registry)`: `ExecuteAsync(BatchRequest, CancellationToken) -> BatchResult`.
-- Execute steps in order, stopping at the first failure; each step result has `index`, `kind`, `ok`, `code?`, `message?`, `data?`. `failedIndex` is the zero-based failed step. `snapshotBefore`/`snapshotAfter` are a11y-only snapshots of the selected window (no image), saved to the store; snapshots are best-effort, and a failure is recorded in `BatchResult.Warning` without stopping the steps. Cancellation between steps stops the batch and returns the completed steps with `failedIndex` set to the next step.
+- Execute steps in order, stopping at the first failure; each step result has `index`, `kind`, `ok`, `code?`, `message?`, `data?`. `failedIndex` is the zero-based failed step. `snapshotBefore`/`snapshotAfter` are a11y-only snapshots of the selected window (no image). `snapshotBefore` is returned only: saving it would replace the state the batch's own steps act on. `snapshotAfter` is saved for later actions. Snapshots are best-effort, and a failure is recorded in `BatchResult.Warning` without stopping the steps. Cancellation between steps stops the batch and returns the completed steps with `failedIndex` set to the next step.
 
 - [ ] **Step 1: Write the failing tests**
 

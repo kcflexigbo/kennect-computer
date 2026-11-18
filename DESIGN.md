@@ -213,7 +213,7 @@ Hidden/offscreen/disabled nodes are filtered by default. Interactive nodes and t
 
 ### Text input
 
-- Paste is the default (`method: "paste"`): save the current clipboard, set the text, send Ctrl+V / Cmd+V, restore the clipboard. This is faster and far more reliable for CJK and long text in Electron contenteditables.
+- Paste is the default (`method: "paste"`): save the current clipboard, set the text, send Ctrl+V / Cmd+V, wait (bounded) for the target to consume the paste, then restore the clipboard in a `finally`. This is faster and far more reliable for CJK and long text in Electron contenteditables. Paste fails with `INVALID_REQUEST` before writing anything when the clipboard cannot be read or holds non-text content (an image, copied files, or ANSI-only text), because a text-only save/restore would destroy it. If another app holds the clipboard during the restore, the typed text may remain until that app releases it; the restore is best-effort.
 - `"value"` sets the accessibility value directly where the control supports it.
 - `"keys"` types character by character using Unicode input (SendInput with `KEYEVENTF_UNICODE`; CGEvent with `CGEventKeyboardSetUnicodeString`). Slower; fallback only.
 - Clipboard writes are audited and gated when the policy gate is enabled.

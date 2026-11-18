@@ -40,7 +40,15 @@ $ToolNames = @(
     'computer_select',
     'computer_snapshot',
     'computer_focus',
-    'computer_stop'
+    'computer_stop',
+    'computer_click',
+    'computer_type',
+    'computer_key',
+    'computer_scroll',
+    'computer_find',
+    'computer_wait',
+    'computer_read_text',
+    'computer_batch'
 )
 
 if (-not (Test-Path -LiteralPath $PackageJsonPath)) {
