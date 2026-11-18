@@ -29,6 +29,12 @@ public sealed class JsonRpcDispatcher
     private const int MaxSnapshotDepth = 100;
     private const int MaxSnapshotNodes = 50_000;
 
+    // Click counts become a mouse-event array and type text becomes input
+    // events, so both carry the shared schema's documented maxima. A hidden
+    // client that bypasses the schema must not reach an unbounded allocation.
+    private const int MaxClickCount = 10;
+    private const int MaxTypeTextLength = 100_000;
+
     private readonly TokenStore _tokens;
     private readonly IMonitorProvider _monitors;
     private readonly IDesktopState _desktop;
@@ -808,7 +814,10 @@ public sealed class JsonRpcDispatcher
         return element.GetBoolean();
     }
 
-    private static int? ReadOptionalPositiveInt(JsonElement parameters, string name)
+    private static int? ReadOptionalPositiveInt(
+        JsonElement parameters,
+        string name,
+        int maximum = int.MaxValue)
     {
         if (!parameters.TryGetProperty(name, out var element))
         {
@@ -817,9 +826,13 @@ public sealed class JsonRpcDispatcher
 
         if (element.ValueKind != JsonValueKind.Number
             || !element.TryGetInt32(out var value)
-            || value < 1)
+            || value < 1
+            || value > maximum)
         {
-            throw Invalid($"{name} must be a positive integer.");
+            throw Invalid(
+                maximum == int.MaxValue
+                    ? $"{name} must be a positive integer."
+                    : $"{name} must be an integer between 1 and {maximum}.");
         }
 
         return value;
@@ -1056,7 +1069,7 @@ public sealed class JsonRpcDispatcher
             Y = y,
             Space = ReadSpace(parameters),
             Button = ReadButton(parameters),
-            Count = ReadOptionalPositiveInt(parameters, "count") ?? 1,
+            Count = ReadOptionalPositiveInt(parameters, "count", MaxClickCount) ?? 1,
             Expect = ParseExpect(parameters),
         };
     }
@@ -1065,9 +1078,16 @@ public sealed class JsonRpcDispatcher
     {
         EnsureAllowedFields(parameters, "kind", "text", "method", "nodeId", "expect");
 
+        var text = ReadRequiredString(parameters, "text");
+        if (text.Length > MaxTypeTextLength)
+        {
+            throw Invalid(
+                $"text must be at most {MaxTypeTextLength} characters.");
+        }
+
         return new TypeRequest
         {
-            Text = ReadRequiredString(parameters, "text"),
+            Text = text,
             Method = ReadTypeMethod(parameters),
             NodeId = ReadOptionalString(parameters, "nodeId"),
             Expect = ParseExpect(parameters),

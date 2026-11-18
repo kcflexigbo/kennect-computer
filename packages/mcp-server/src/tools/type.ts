@@ -1,7 +1,7 @@
 import type { ActionResult, TypeRequest } from "@kennect/shared/actions";
 import { ActionResultSchema } from "@kennect/shared/action-schemas";
 
-import { HOST_REQUEST_TIMEOUT_MS } from "../config.js";
+import { typeRequestTimeoutMs } from "../config.js";
 import { failure, failureFromError, ok, type ToolResult } from "../tool-result.js";
 import type { HostRequester } from "./status.js";
 
@@ -20,7 +20,7 @@ export async function typeTool(
     const payload = await host.request<unknown>(
       "action",
       { kind: "type", ...args },
-      HOST_REQUEST_TIMEOUT_MS,
+      typeRequestTimeoutMs(args),
     );
     const parsed = ActionResultSchema.safeParse(payload);
 

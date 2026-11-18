@@ -82,6 +82,35 @@ describe("typeTool", () => {
     );
   });
 
+  it("extends the host deadline with the text length for a keys sequence", async () => {
+    const request = vi.fn().mockResolvedValue(typeResult);
+    const text = "a".repeat(20_000);
+
+    await typeTool(requester(request), { text, method: "keys" });
+
+    // 1 ms per UTF-16 code unit plus the shared grace margin, and never
+    // shorter than a normal host request.
+    expect(request).toHaveBeenCalledWith(
+      "action",
+      { kind: "type", text, method: "keys" },
+      20_000 + 2_000,
+    );
+  });
+
+  it("keeps the normal host deadline for paste and value", async () => {
+    for (const method of ["paste", "value"] as const) {
+      const request = vi.fn().mockResolvedValue(typeResult);
+
+      await typeTool(requester(request), { text: "a".repeat(20_000), method });
+
+      expect(request).toHaveBeenCalledWith(
+        "action",
+        { kind: "type", text: "a".repeat(20_000), method },
+        HOST_REQUEST_TIMEOUT_MS,
+      );
+    }
+  });
+
   it("maps a failed expect predicate to a non-retryable envelope", async () => {
     const request = vi.fn().mockRejectedValue(
       new HostError("EXPECTATION_FAILED", "The foreground predicate failed."),
@@ -229,6 +258,17 @@ describe("computer_type MCP tool", () => {
       client.callTool({
         name: "computer_type",
         arguments: { text: "Hello", keys: "Enter" },
+      }),
+    ).rejects.toMatchObject({ code: ErrorCode.InvalidParams });
+  });
+
+  it("rejects text longer than 100,000 characters as JSON-RPC -32602", async () => {
+    const client = await connect(providerFor({ request: vi.fn() }));
+
+    await expect(
+      client.callTool({
+        name: "computer_type",
+        arguments: { text: "a".repeat(100_001) },
       }),
     ).rejects.toMatchObject({ code: ErrorCode.InvalidParams });
   });

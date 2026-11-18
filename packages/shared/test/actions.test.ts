@@ -59,6 +59,12 @@ describe("ClickRequestSchema", () => {
   it("accepts only image or screen as the coordinate space", () => {
     expect(() => ClickRequestSchema.parse({ nodeId: "n1:2", space: "physical" })).toThrow();
   });
+
+  it("bounds count to 1..10", () => {
+    expect(ClickRequestSchema.parse({ nodeId: "n1:2", count: 10 }).count).toBe(10);
+    expect(() => ClickRequestSchema.parse({ nodeId: "n1:2", count: 0 })).toThrow();
+    expect(() => ClickRequestSchema.parse({ nodeId: "n1:2", count: 11 })).toThrow();
+  });
 });
 
 describe("TypeRequestSchema", () => {
@@ -82,6 +88,11 @@ describe("TypeRequestSchema", () => {
       expect: [{ kind: "node", role: "edit", focused: true }],
     });
     expect(parsed.nodeId).toBe("n1:2");
+  });
+
+  it("bounds text to 100,000 characters", () => {
+    expect(TypeRequestSchema.parse({ text: "a".repeat(100_000) }).text).toHaveLength(100_000);
+    expect(() => TypeRequestSchema.parse({ text: "a".repeat(100_001) })).toThrow();
   });
 });
 
@@ -135,6 +146,12 @@ describe("WaitRequestSchema", () => {
   it("rejects unknown fields", () => {
     expect(() => WaitRequestSchema.parse({ condition: windowCondition, interval: 5 })).toThrow();
   });
+
+  it("bounds timeoutMs to 1..60,000", () => {
+    expect(WaitRequestSchema.parse({ condition: windowCondition, timeoutMs: 60_000 }).timeoutMs)
+      .toBe(60_000);
+    expect(() => WaitRequestSchema.parse({ condition: windowCondition, timeoutMs: 60_001 })).toThrow();
+  });
 });
 
 describe("FindRequestSchema", () => {
@@ -146,6 +163,11 @@ describe("FindRequestSchema", () => {
   it("rejects invalid caps and unknown fields", () => {
     expect(() => FindRequestSchema.parse({ maxResults: 0 })).toThrow();
     expect(() => FindRequestSchema.parse({ text: "send", depth: 3 })).toThrow();
+  });
+
+  it("bounds maxResults to 1..500", () => {
+    expect(FindRequestSchema.parse({ maxResults: 500 }).maxResults).toBe(500);
+    expect(() => FindRequestSchema.parse({ maxResults: 501 })).toThrow();
   });
 });
 
@@ -159,6 +181,12 @@ describe("ReadTextRequestSchema", () => {
   it("accepts and validates maxLength", () => {
     expect(ReadTextRequestSchema.parse({ nodeId: "n1:2", maxLength: 1000 }).maxLength).toBe(1000);
     expect(() => ReadTextRequestSchema.parse({ nodeId: "n1:2", maxLength: 0 })).toThrow();
+  });
+
+  it("bounds maxLength to 1..50,000", () => {
+    expect(ReadTextRequestSchema.parse({ nodeId: "n1:2", maxLength: 50_000 }).maxLength)
+      .toBe(50_000);
+    expect(() => ReadTextRequestSchema.parse({ nodeId: "n1:2", maxLength: 50_001 })).toThrow();
   });
 });
 

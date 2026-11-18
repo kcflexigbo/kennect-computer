@@ -39,6 +39,18 @@ export const ScrollDirectionSchema = z.enum(["up", "down", "left", "right"]);
 export const TypeMethodSchema = z.enum(["paste", "value", "keys"]);
 export const ActionStepKindSchema = z.enum(["click", "type", "key", "scroll", "wait", "readText"]);
 
+/**
+ * Documented maxima shared by the schemas, the MCP tool descriptions, and the
+ * host's own parsers. They keep a malformed request from making the host
+ * allocate without bound (a huge click count) or type long after the client's
+ * deadline (a huge keys text).
+ */
+export const MAX_CLICK_COUNT = 10;
+export const MAX_TYPE_TEXT_LENGTH = 100_000;
+export const MAX_WAIT_TIMEOUT_MS = 60_000;
+export const MAX_FIND_RESULTS = 500;
+export const MAX_READ_TEXT_LENGTH = 50_000;
+
 const nodeId = z.string().min(1);
 const finiteNumber = z.number().finite();
 const selectorFields = {
@@ -106,7 +118,7 @@ const clickRequestShape = {
   y: finiteNumber.optional(),
   space: CoordinateSpaceSchema.optional(),
   button: MouseButtonSchema.optional(),
-  count: z.number().int().positive().optional(),
+  count: z.number().int().positive().max(MAX_CLICK_COUNT).optional(),
   expect: z.array(ExpectPredicateSchema).optional(),
 };
 
@@ -116,7 +128,7 @@ export const ClickRequestSchema = z
   .refine(hasSingleTarget, { message: TARGET_MESSAGE });
 
 const typeRequestShape = {
-  text: z.string().min(1),
+  text: z.string().min(1).max(MAX_TYPE_TEXT_LENGTH),
   method: TypeMethodSchema.optional(),
   nodeId: nodeId.optional(),
   expect: z.array(ExpectPredicateSchema).optional(),
@@ -150,7 +162,7 @@ export const FindRequestSchema = z
   .object({
     text: z.string().min(1).optional(),
     role: z.string().min(1).optional(),
-    maxResults: z.number().int().positive().optional(),
+    maxResults: z.number().int().positive().max(MAX_FIND_RESULTS).optional(),
   })
   .strict();
 
@@ -195,7 +207,7 @@ export const WaitConditionSchema = z
 const waitRequestShape = {
   condition: WaitConditionSchema,
   present: z.boolean().optional(),
-  timeoutMs: z.number().int().positive().optional(),
+  timeoutMs: z.number().int().positive().max(MAX_WAIT_TIMEOUT_MS).optional(),
   pollMs: z.number().int().positive().optional(),
 };
 
@@ -203,7 +215,7 @@ export const WaitRequestSchema = z.object(waitRequestShape).strict();
 
 const readTextRequestShape = {
   nodeId,
-  maxLength: z.number().int().positive().optional(),
+  maxLength: z.number().int().positive().max(MAX_READ_TEXT_LENGTH).optional(),
 };
 
 export const ReadTextRequestSchema = z.object(readTextRequestShape).strict();

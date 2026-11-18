@@ -314,6 +314,40 @@ public sealed class DispatcherTests
     }
 
     [Fact]
+    public async Task ActionClickRejectsACountAboveTenBeforeInput()
+    {
+        var raw = NotepadRawWindow();
+        var harness = NewSelectionHarness(new FakeUiaWalker(), new FakeWindowCapture(), raw);
+        var info = harness.Registry.Register(raw);
+        harness.Selection.Select(info);
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request(
+                "action",
+                """{"kind":"click","x":5,"y":5,"space":"screen","count":11}"""));
+
+        Assert.Equal("INVALID_REQUEST", ErrorCodeOf(response));
+        Assert.Empty(harness.Input.Calls);
+    }
+
+    [Fact]
+    public async Task ActionTypeRejectsTextAboveOneHundredThousandCharacters()
+    {
+        var raw = NotepadRawWindow();
+        var harness = NewSelectionHarness(new FakeUiaWalker(), new FakeWindowCapture(), raw);
+        var info = harness.Registry.Register(raw);
+        harness.Selection.Select(info);
+        var text = new string('a', 100_001);
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("action", $$"""{"kind":"type","text":"{{text}}"}"""));
+
+        Assert.Equal("INVALID_REQUEST", ErrorCodeOf(response));
+        Assert.Empty(harness.Clipboard.Sets);
+        Assert.Empty(harness.Input.Calls);
+    }
+
+    [Fact]
     public async Task ActionTypePastesTextAndReturnsTheActionResult()
     {
         var raw = NotepadRawWindow();

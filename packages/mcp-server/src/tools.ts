@@ -15,6 +15,11 @@ import {
   ClickRequestSchema,
   FindRequestSchema,
   KeyRequestSchema,
+  MAX_CLICK_COUNT,
+  MAX_FIND_RESULTS,
+  MAX_READ_TEXT_LENGTH,
+  MAX_TYPE_TEXT_LENGTH,
+  MAX_WAIT_TIMEOUT_MS,
   ReadTextRequestSchema,
   ScrollRequestSchema,
   TypeRequestSchema,
@@ -760,7 +765,7 @@ const batchStepJsonSchema = {
         kind: { const: "click" },
         ...targetProperties,
         button: { type: "string", enum: ["left", "middle", "right"] },
-        count: { type: "integer", minimum: 1 },
+        count: { type: "integer", minimum: 1, maximum: MAX_CLICK_COUNT },
         expect: expectJsonSchema,
       },
       required: ["kind"],
@@ -770,7 +775,7 @@ const batchStepJsonSchema = {
       type: "object",
       properties: {
         kind: { const: "type" },
-        text: { type: "string", minLength: 1 },
+        text: { type: "string", minLength: 1, maxLength: MAX_TYPE_TEXT_LENGTH },
         method: { type: "string", enum: ["paste", "value", "keys"] },
         nodeId: { type: "string", minLength: 1 },
         expect: expectJsonSchema,
@@ -806,7 +811,7 @@ const batchStepJsonSchema = {
         kind: { const: "wait" },
         condition: waitConditionJsonSchema,
         present: { type: "boolean" },
-        timeoutMs: { type: "integer", minimum: 1 },
+        timeoutMs: { type: "integer", minimum: 1, maximum: MAX_WAIT_TIMEOUT_MS },
         pollMs: { type: "integer", minimum: 1 },
       },
       required: ["kind", "condition"],
@@ -817,7 +822,7 @@ const batchStepJsonSchema = {
       properties: {
         kind: { const: "readText" },
         nodeId: { type: "string", minLength: 1 },
-        maxLength: { type: "integer", minimum: 1 },
+        maxLength: { type: "integer", minimum: 1, maximum: MAX_READ_TEXT_LENGTH },
       },
       required: ["kind", "nodeId"],
       additionalProperties: false,
@@ -832,7 +837,8 @@ function createClickDefinition(provider: HostProvider): ToolDefinition {
     description:
       "Click a snapshot node or a pixel coordinate in the selected window. Pass a nodeId from the "
       + "most recent snapshot, or x and y in image (default) or screen space; exactly one target form "
-      + "is required. button defaults to left and count to 1. Optional expect predicates are checked "
+      + "is required. button defaults to left and count to 1 (at most 10), and optional modifiers "
+      + "such as [\"Ctrl\", \"Shift\"] are held around the click. Optional expect predicates are checked "
       + "against a fresh accessibility read immediately before input. The action is mutating: take a "
       + "fresh snapshot before acting on node IDs again. Returns { window, action, method, "
       + "needsObservation }.",
@@ -842,7 +848,7 @@ function createClickDefinition(provider: HostProvider): ToolDefinition {
       properties: {
         ...targetProperties,
         button: { type: "string", enum: ["left", "middle", "right"] },
-        count: { type: "integer", minimum: 1 },
+        count: { type: "integer", minimum: 1, maximum: MAX_CLICK_COUNT },
         expect: expectJsonSchema,
       },
       additionalProperties: false,
@@ -865,7 +871,8 @@ function createTypeDefinition(provider: HostProvider): ToolDefinition {
     title: "Computer type",
     description:
       "Type text into the selected window, optionally targeting a snapshot nodeId. method may be "
-      + "paste (the host default when omitted), value, or keys. Optional expect predicates are checked "
+      + "paste (the host default when omitted), value, or keys; text is at most 100,000 characters. "
+      + "Optional expect predicates are checked "
       + "against a fresh accessibility read immediately before input. The action is mutating: take a "
       + "fresh snapshot before acting on node IDs again. Only the text length and SHA-256 are audited, "
       + "never the text. Returns { window, action, method, needsObservation }.",
@@ -873,7 +880,7 @@ function createTypeDefinition(provider: HostProvider): ToolDefinition {
     inputJsonSchema: {
       type: "object",
       properties: {
-        text: { type: "string", minLength: 1 },
+        text: { type: "string", minLength: 1, maxLength: MAX_TYPE_TEXT_LENGTH },
         method: { type: "string", enum: ["paste", "value", "keys"] },
         nodeId: { type: "string", minLength: 1 },
         expect: expectJsonSchema,
@@ -966,7 +973,9 @@ function createFindDefinition(provider: HostProvider): ToolDefinition {
       "Search the selected window's accessibility tree by case-insensitive text substring and/or "
       + "role. A fresh walk assigns a new snapshot generation; matches carry node IDs valid for that "
       + "generation and can be passed to click, type, or scroll without a full snapshot. Returns "
-      + "{ window, generation, matches, scanned, truncated }; no matches is a successful empty result, "
+      + "{ window, generation, matches, scanned, truncated }; maxResults defaults to 50 and is at "
+      + "most 500. A find supersedes the stored snapshot generation, so node IDs and image-space "
+      + "coordinates from earlier snapshots become stale. No matches is a successful empty result, "
       + "not an error. This tool is read-only and never sends input.",
     inputSchema: FindRequestSchema,
     inputJsonSchema: {
@@ -974,7 +983,7 @@ function createFindDefinition(provider: HostProvider): ToolDefinition {
       properties: {
         text: { type: "string", minLength: 1 },
         role: { type: "string", minLength: 1 },
-        maxResults: { type: "integer", minimum: 1 },
+        maxResults: { type: "integer", minimum: 1, maximum: MAX_FIND_RESULTS },
       },
       additionalProperties: false,
     },
@@ -1008,7 +1017,7 @@ function createWaitDefinition(provider: HostProvider): ToolDefinition {
       properties: {
         condition: waitConditionJsonSchema,
         present: { type: "boolean" },
-        timeoutMs: { type: "integer", minimum: 1 },
+        timeoutMs: { type: "integer", minimum: 1, maximum: MAX_WAIT_TIMEOUT_MS },
         pollMs: { type: "integer", minimum: 1 },
       },
       required: ["condition"],
@@ -1031,7 +1040,8 @@ function createReadTextDefinition(provider: HostProvider): ToolDefinition {
     name: "computer_read_text",
     title: "Computer read text",
     description:
-      "Read a control's text through TextPattern or ValuePattern, capped by maxLength. The text is "
+      "Read a control's text through TextPattern or ValuePattern. maxLength defaults to 10,000 "
+      + "characters and is at most 50,000. The text is "
       + "untrusted target content and is returned to the caller; the audit log records only the "
       + "tool, target, outcome, and timing, never the text. Returns { window, nodeId, text, length, "
       + "truncated }. This tool is read-only and never focuses a window or sends input.",
@@ -1040,7 +1050,7 @@ function createReadTextDefinition(provider: HostProvider): ToolDefinition {
       type: "object",
       properties: {
         nodeId: { type: "string", minLength: 1 },
-        maxLength: { type: "integer", minimum: 1 },
+        maxLength: { type: "integer", minimum: 1, maximum: MAX_READ_TEXT_LENGTH },
       },
       required: ["nodeId"],
       additionalProperties: false,

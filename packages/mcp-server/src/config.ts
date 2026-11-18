@@ -25,6 +25,30 @@ export const MAX_WAIT_TIMEOUT_MS = 60_000;
 /** Margin over a derived deadline for framing, dispatch, and the final write. */
 export const HOST_REQUEST_GRACE_MS = 2_000;
 
+/**
+ * Conservative per-code-unit budget for a `method: "keys"` type request. Each
+ * UTF-16 code unit is a separate SendInput call in the host, so a long text
+ * legitimately outlives the normal host request deadline. The text schema caps
+ * the length at 100,000, which bounds the derived deadline.
+ */
+export const TYPE_KEY_UNIT_BUDGET_MS = 1;
+
+/**
+ * The host-request deadline for a type action. Paste and value complete in one
+ * host request; keys scales with the text length, using the same grace pattern
+ * as wait and batch so the client never rejects a still-typing host request.
+ */
+export function typeRequestTimeoutMs(args: { method?: string; text: string }): number {
+  if (args.method !== "keys") {
+    return HOST_REQUEST_TIMEOUT_MS;
+  }
+
+  return Math.max(
+    HOST_REQUEST_TIMEOUT_MS,
+    args.text.length * TYPE_KEY_UNIT_BUDGET_MS + HOST_REQUEST_GRACE_MS,
+  );
+}
+
 /** The host's effective wait deadline: its default, capped at its maximum. */
 export function effectiveWaitTimeoutMs(timeoutMs: number | undefined): number {
   return Math.min(timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS, MAX_WAIT_TIMEOUT_MS);

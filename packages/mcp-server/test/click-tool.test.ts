@@ -179,4 +179,15 @@ describe("computer_click MCP tool", () => {
       }),
     ).rejects.toMatchObject({ code: ErrorCode.InvalidParams });
   });
+
+  it("rejects a count above ten as JSON-RPC -32602", async () => {
+    const client = await connect(providerFor({ request: vi.fn() }));
+
+    await expect(
+      client.callTool({
+        name: "computer_click",
+        arguments: { nodeId: "n3:2", count: 11 },
+      }),
+    ).rejects.toMatchObject({ code: ErrorCode.InvalidParams });
+  });
 });
