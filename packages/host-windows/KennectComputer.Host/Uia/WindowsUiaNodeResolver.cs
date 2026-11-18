@@ -91,6 +91,205 @@ public sealed class WindowsUiaNodeResolver : IUiaNodeResolver
         return null;
     }
 
+    /// <summary>
+    /// Snaps a physical point to the live element under it. The element must
+    /// belong to the selected window; a small leaf is used directly, while a
+    /// container is asked for the text rectangle at the point. Anything larger
+    /// than a text line or a control is ignored, so an estimated click in a
+    /// gap cannot be redirected to a row or the whole document.
+    /// </summary>
+    public SnapTarget? SnapToPoint(nint hwnd, int x, int y, CancellationToken cancellationToken)
+    {
+        if (hwnd == 0)
+        {
+            return null;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        using var automation = new UIA3Automation();
+
+        AutomationElement? window;
+        AutomationElement? element;
+        try
+        {
+            window = automation.FromHandle(hwnd);
+            if (window is null)
+            {
+                return null;
+            }
+
+            element = automation.FromPoint(new System.Drawing.Point(x, y));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+
+        if (element is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            if (!BelongsToWindow(automation, element, window))
+            {
+                return null;
+            }
+
+            var identity = WindowsUiaNode.ReadIdentity(element);
+            if (IsSnappable(identity))
+            {
+                return new SnapTarget(identity.Role, identity.Name, identity.Bounds);
+            }
+
+            return TryTextRect(automation, element, x, y, out var rect)
+                ? new SnapTarget(identity.Role, identity.Name, rect)
+                : null;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static readonly HashSet<string> ContainerRoles = new(StringComparer.Ordinal)
+    {
+        "application",
+        "custom",
+        "dataitem",
+        "document",
+        "group",
+        "list",
+        "listitem",
+        "menubar",
+        "pane",
+        "scrollbar",
+        "table",
+        "titlebar",
+        "toolbar",
+        "window",
+    };
+
+    private static bool IsSnappable(UiaElementIdentity identity)
+        => identity.Bounds.Width is > 0 and <= 1200
+            && identity.Bounds.Height is > 0 and <= 80
+            && !ContainerRoles.Contains(identity.Role);
+
+    private static bool BelongsToWindow(
+        UIA3Automation automation,
+        AutomationElement element,
+        AutomationElement window)
+    {
+        try
+        {
+            var handle = (nint)window.Properties.NativeWindowHandle.ValueOrDefault;
+            if (handle == 0)
+            {
+                return SameProcess(element, window);
+            }
+
+            var walker = automation.TreeWalkerFactory.GetControlViewWalker();
+            var current = element;
+            for (var depth = 0; depth < 64; depth++)
+            {
+                var parent = walker.GetParent(current);
+                if (parent is null)
+                {
+                    return (nint)current.Properties.NativeWindowHandle.ValueOrDefault == handle;
+                }
+
+                current = parent;
+            }
+        }
+        catch (Exception)
+        {
+            // Providers that cannot walk parents fall back to the process
+            // check below; the selected window is foreground before this runs.
+        }
+
+        return SameProcess(element, window);
+    }
+
+    private static bool SameProcess(AutomationElement element, AutomationElement window)
+    {
+        try
+        {
+            return element.Properties.ProcessId.ValueOrDefault
+                == window.Properties.ProcessId.ValueOrDefault;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryTextRect(
+        UIA3Automation automation,
+        AutomationElement element,
+        int x,
+        int y,
+        out Rect rect)
+    {
+        rect = new Rect();
+
+        // A container without its own text pattern can still expose the
+        // document's text; walk a few levels up before giving up.
+        AutomationElement? current = element;
+        for (var depth = 0; depth < 4 && current is not null; depth++)
+        {
+            var pattern = WindowsUiaWalker.Read(
+                () => current.Patterns.Text.PatternOrDefault,
+                null);
+            if (pattern is not null)
+            {
+                var rectangles = WindowsUiaWalker.Read(
+                    () => pattern.DocumentRange.GetBoundingRectangles(),
+                    null);
+                if (rectangles is not null)
+                {
+                    var point = new System.Drawing.Point(x, y);
+                    foreach (var candidate in rectangles)
+                    {
+                        if (candidate.Width <= 0
+                            || candidate.Height <= 0
+                            || candidate.Height > 80
+                            || candidate.Width > 1200)
+                        {
+                            continue;
+                        }
+
+                        if (candidate.Contains(point))
+                        {
+                            rect = WindowsUiaWalker.ToRect(candidate);
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            try
+            {
+                current = automation.TreeWalkerFactory.GetControlViewWalker().GetParent(current);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        return false;
+    }
+
     private static AutomationElement[] FindCandidates(AutomationElement window, TreeModel target)
     {
         var condition = BuildCondition(window.ConditionFactory, target);

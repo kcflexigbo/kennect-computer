@@ -400,6 +400,22 @@ internal sealed class FakeUiaNodeResolver : IUiaNodeResolver
 
     public TreeModel? LastTarget { get; private set; }
 
+    /// <summary>The element a coordinate click should snap to, when set.</summary>
+    public SnapTarget? SnapTarget { get; init; }
+
+    public List<(int X, int Y)> SnapCalls { get; } = [];
+
+    public SnapTarget? SnapToPoint(
+        nint hwnd,
+        int x,
+        int y,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        SnapCalls.Add((x, y));
+        return SnapTarget;
+    }
+
     public IUiaNode? Resolve(nint hwnd, TreeModel target, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(target);

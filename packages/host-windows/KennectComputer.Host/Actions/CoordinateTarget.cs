@@ -77,24 +77,42 @@ internal static class CoordinateTarget
         ArgumentNullException.ThrowIfNull(window);
         ArgumentException.ThrowIfNullOrEmpty(actionName);
 
-        var bounds = node.Bounds;
+        if (TryBoundsCenter(node.Bounds, window, out var center))
+        {
+            return center;
+        }
+
+        throw new ActionFailedException(
+            ErrorCode.StaleSnapshot,
+            node.Bounds.Width <= 0 || node.Bounds.Height <= 0
+                ? $"The {actionName} target has no on-screen bounds; take a new snapshot."
+                : $"The {actionName} target is not inside the selected window; "
+                    + "take a new snapshot.");
+    }
+
+    /// <summary>
+    /// The bounds center when the bounds have area and the center lies inside
+    /// the selected window. Snapping uses this to decide whether an element
+    /// found under an estimated point is a safe replacement for it.
+    /// </summary>
+    public static bool TryBoundsCenter(Rect bounds, WindowInfo window, out Input.Point center)
+    {
+        ArgumentNullException.ThrowIfNull(window);
+
+        center = default;
         if (bounds.Width <= 0 || bounds.Height <= 0)
         {
-            throw new ActionFailedException(
-                ErrorCode.StaleSnapshot,
-                $"The {actionName} target has no on-screen bounds; take a new snapshot.");
+            return false;
         }
 
-        var center = BoundsCenter(bounds);
-        if (!Contains(window.Bounds, center))
+        var candidate = BoundsCenter(bounds);
+        if (!Contains(window.Bounds, candidate))
         {
-            throw new ActionFailedException(
-                ErrorCode.StaleSnapshot,
-                $"The {actionName} target is not inside the selected window; "
-                + "take a new snapshot.");
+            return false;
         }
 
-        return center;
+        center = candidate;
+        return true;
     }
 
     /// <summary>The live element's bounds center in physical screen pixels.</summary>

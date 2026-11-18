@@ -104,11 +104,19 @@ export interface ReadTextRequest {
   maxLength?: number;
 }
 
+/** The live element a coordinate click was snapped to, when the host corrected it. */
+export interface SnappedTarget {
+  role: string;
+  name: string;
+}
+
 /** Result of a mutating action. `action` is the request kind; `method` is how it was carried out. */
 export interface ActionResult {
   window: WindowInfo;
   action: string;
   method: string;
+  /** Present when a coordinate click landed on a live element's center instead. */
+  snappedTo?: SnappedTarget;
   needsObservation: boolean;
 }
 

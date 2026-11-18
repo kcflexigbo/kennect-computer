@@ -260,11 +260,19 @@ export const BatchStepResultSchema = z
   })
   .strict();
 
+export const SnappedTargetSchema = z
+  .object({
+    role: z.string().min(1),
+    name: z.string(),
+  })
+  .strict();
+
 export const ActionResultSchema = z
   .object({
     window: WindowInfoSchema,
     action: z.string().min(1),
     method: z.string().min(1),
+    snappedTo: SnappedTargetSchema.optional(),
     needsObservation: z.boolean(),
   })
   .strict();

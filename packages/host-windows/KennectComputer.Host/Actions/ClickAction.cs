@@ -167,11 +167,23 @@ public sealed class ClickAction
                 cancellationToken)
             .ConfigureAwait(false);
 
+        // With the window foreground, a point that landed near a target can
+        // be corrected to the live element under it. A container or a point
+        // outside the window keeps the original coordinate.
+        SnapInfo? snappedTo = null;
+        var snap = _resolver.SnapToPoint(window.Hwnd, point.X, point.Y, cancellationToken);
+        if (snap is not null
+            && CoordinateTarget.TryBoundsCenter(snap.Bounds, window.Info, out var snappedPoint))
+        {
+            point = snappedPoint;
+            snappedTo = new SnapInfo(snap.Role, snap.Name);
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
         _input.MoveTo(point.X, point.Y);
         SendClick(request, modifiers, cancellationToken);
 
-        return Succeeded(window.Info, "coordinates");
+        return Succeeded(window.Info, "coordinates", snappedTo);
     }
 
     private static bool RequiresMouseGesture(ClickRequest request)
@@ -293,12 +305,16 @@ public sealed class ClickAction
         return node.TryExpand();
     }
 
-    private static ActionResult Succeeded(WindowInfo window, string method) => new()
+    private static ActionResult Succeeded(
+        WindowInfo window,
+        string method,
+        SnapInfo? snappedTo = null) => new()
     {
         Window = window,
         Action = "click",
         Method = method,
         NeedsObservation = true,
+        SnappedTo = snappedTo,
     };
 
     private static ActionFailedException Failure(ErrorCode code, string message)
