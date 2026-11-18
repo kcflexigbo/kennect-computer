@@ -8,6 +8,35 @@ using KennectComputer.Host.Input;
 namespace KennectComputer.Host.Tray;
 
 /// <summary>
+/// Runs the host-shutdown callback exactly once, however many times Exit is
+/// requested (tray item, Program teardown, or both). Keeping the callback here
+/// makes the exit path testable without creating a real tray (R30).
+/// </summary>
+public sealed class ExitRequest
+{
+    private readonly Action _shutdown;
+    private int _requested;
+
+    public ExitRequest(Action shutdown)
+        => _shutdown = shutdown ?? throw new ArgumentNullException(nameof(shutdown));
+
+    /// <summary>True once shutdown has been requested.</summary>
+    public bool IsRequested => Volatile.Read(ref _requested) != 0;
+
+    /// <summary>
+    /// Invokes the shutdown callback on the first request only. Later requests
+    /// are no-ops, so tray Exit and the host's own teardown can both call this.
+    /// </summary>
+    public void Request()
+    {
+        if (Interlocked.Exchange(ref _requested, 1) == 0)
+        {
+            _shutdown();
+        }
+    }
+}
+
+/// <summary>
 /// The Windows tray shell: Status, Stop, and Exit, plus the hidden window that
 /// receives <c>WM_HOTKEY</c> and marshals UI work onto the STA thread.
 ///
@@ -22,7 +51,7 @@ public sealed class TrayApp : IDisposable
 
     private readonly ControlSession _control;
     private readonly StopHotkey _hotkey;
-    private readonly Action _exit;
+    private readonly ExitRequest _exit;
     private readonly NotifyIcon _icon;
     private readonly ContextMenuStrip _menu;
     private readonly MessageWindow _messageWindow;
@@ -37,7 +66,7 @@ public sealed class TrayApp : IDisposable
     {
         _control = control ?? throw new ArgumentNullException(nameof(control));
         _hotkey = hotkey ?? throw new ArgumentNullException(nameof(hotkey));
-        _exit = exit ?? throw new ArgumentNullException(nameof(exit));
+        _exit = new ExitRequest(exit ?? throw new ArgumentNullException(nameof(exit)));
 
         _messageWindow = new MessageWindow(hotkey);
         _ = _messageWindow.Handle; // Force handle creation on this STA thread.
@@ -114,8 +143,17 @@ public sealed class TrayApp : IDisposable
         return completion.Task;
     }
 
-    /// <summary>Posts thread exit to the tray loop; safe from any thread.</summary>
-    public void RequestExit() => Post(Application.ExitThread);
+    /// <summary>
+    /// Stops the host exactly once, then posts thread exit to the tray loop.
+    /// The shutdown callback cancels the pipe server (and with it releases the
+    /// single-instance lock), so this must run even if the UI loop is already
+    /// gone; callable from any thread and idempotent.
+    /// </summary>
+    public void RequestExit()
+    {
+        _exit.Request();
+        Post(Application.ExitThread);
+    }
 
     public void Dispose()
     {
