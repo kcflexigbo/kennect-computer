@@ -2,7 +2,6 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import type { WindowInfo } from "@kennect/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { HOST_REQUEST_TIMEOUT_MS } from "../src/config.js";
@@ -12,17 +11,7 @@ import type { HostProvider } from "../src/tools.js";
 import type { HostRequester } from "../src/tools/status.js";
 import { focusTool } from "../src/tools/focus.js";
 import { selectTool, type WindowCandidate } from "../src/tools/select.js";
-
-const notepadWindow: WindowInfo = {
-  windowId: "w_1",
-  title: "Untitled - Notepad",
-  processName: "notepad",
-  pid: 4242,
-  bounds: { x: 0, y: 0, width: 800, height: 600 },
-  focused: true,
-  minimized: false,
-  visible: true,
-};
+import { notepadSnapshot, notepadWindow } from "./support/snapshot-fixture.js";
 
 const candidates: WindowCandidate[] = [
   { windowId: "w_1", title: "a.txt - Notepad", pid: 4242 },
@@ -37,28 +26,52 @@ function providerFor(host: HostRequester): HostProvider {
   return { ensureHost: async () => host };
 }
 
+/** Answers `window.select` with the window and `snapshot` with the a11y outline. */
+function selectAndSnapshotHost(): ReturnType<typeof vi.fn> {
+  return vi.fn(async (method: string) => (
+    method === "window.select" ? { window: notepadWindow } : notepadSnapshot
+  ));
+}
+
 describe("selectTool", () => {
-  it("sends window.select with an explicit windowId and returns the window", async () => {
-    const request = vi.fn().mockResolvedValue({ window: notepadWindow });
+  it("selects the window, snapshots it, and returns both", async () => {
+    const request = selectAndSnapshotHost();
 
     const result = await selectTool(requester(request), { windowId: "w_1" });
 
-    expect(request).toHaveBeenCalledWith(
+    expect(request).toHaveBeenNthCalledWith(
+      1,
       "window.select",
       { windowId: "w_1" },
       HOST_REQUEST_TIMEOUT_MS,
     );
-    expect(result).toEqual({ ok: true, data: { window: notepadWindow } });
+    expect(request).toHaveBeenNthCalledWith(
+      2,
+      "snapshot",
+      { windowId: "w_1", mode: "a11y" },
+      HOST_REQUEST_TIMEOUT_MS,
+    );
+    expect(result).toEqual({
+      ok: true,
+      data: { window: notepadWindow, snapshot: notepadSnapshot },
+    });
   });
 
-  it("passes process and title criteria through for host-side resolution", async () => {
-    const request = vi.fn().mockResolvedValue({ window: notepadWindow });
+  it("passes process and title criteria through, then snapshots the resolved window", async () => {
+    const request = selectAndSnapshotHost();
 
     await selectTool(requester(request), { process: "notepad", title: "Untitled" });
 
-    expect(request).toHaveBeenCalledWith(
+    expect(request).toHaveBeenNthCalledWith(
+      1,
       "window.select",
       { process: "notepad", title: "Untitled" },
+      HOST_REQUEST_TIMEOUT_MS,
+    );
+    expect(request).toHaveBeenNthCalledWith(
+      2,
+      "snapshot",
+      { windowId: "w_1", mode: "a11y" },
       HOST_REQUEST_TIMEOUT_MS,
     );
   });
@@ -96,7 +109,7 @@ describe("selectTool", () => {
     });
   });
 
-  it("rejects a payload that does not match the protocol schema", async () => {
+  it("rejects a select payload that does not match the protocol schema", async () => {
     const request = vi.fn().mockResolvedValue({ window: { windowId: "w_1" } });
 
     const result = await selectTool(requester(request), { windowId: "w_1" });
@@ -104,6 +117,40 @@ describe("selectTool", () => {
     expect(result.ok).toBe(false);
     expect(result.code).toBe("HOST_UNAVAILABLE");
     expect(result.retryable).toBe(true);
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a snapshot payload that does not match the protocol schema", async () => {
+    const request = selectAndSnapshotHost();
+    request.mockImplementation(async (method: string) => (
+      method === "window.select" ? { window: notepadWindow } : { nodes: [] }
+    ));
+
+    const result = await selectTool(requester(request), { windowId: "w_1" });
+
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe("HOST_UNAVAILABLE");
+    expect(result.retryable).toBe(true);
+  });
+
+  it("preserves a snapshot failure after a successful select", async () => {
+    const request = selectAndSnapshotHost();
+    request.mockImplementation(async (method: string) => {
+      if (method === "window.select") {
+        return { window: notepadWindow };
+      }
+
+      throw new HostError("WINDOW_GONE", "The window is gone.");
+    });
+
+    const result = await selectTool(requester(request), { windowId: "w_1" });
+
+    expect(result).toEqual({
+      ok: false,
+      code: "WINDOW_GONE",
+      message: "The window is gone.",
+      retryable: false,
+    });
   });
 });
 
@@ -172,7 +219,7 @@ describe("computer_select and computer_focus MCP tools", () => {
     return client;
   }
 
-  it("advertises select and focus as mutating window tools", async () => {
+  it("advertises select, focus, and snapshot as the window tools", async () => {
     const client = await connect(
       providerFor({ request: vi.fn().mockResolvedValue({ window: notepadWindow }) }),
     );
@@ -183,6 +230,7 @@ describe("computer_select and computer_focus MCP tools", () => {
       "computer_windows",
       "computer_select",
       "computer_focus",
+      "computer_snapshot",
     ]);
 
     const select = tools.find((tool) => tool.name === "computer_select");
@@ -214,19 +262,29 @@ describe("computer_select and computer_focus MCP tools", () => {
     });
   });
 
-  it("returns the select envelope as structuredContent plus a JSON text block", async () => {
-    const request = vi.fn().mockResolvedValue({ window: notepadWindow });
+  it("returns the window and snapshot envelope as structuredContent plus text", async () => {
+    const request = selectAndSnapshotHost();
     const client = await connect(providerFor({ request }));
-    const expected = { ok: true, data: { window: notepadWindow } };
+    const expected = {
+      ok: true,
+      data: { window: notepadWindow, snapshot: notepadSnapshot },
+    };
 
     const result = await client.callTool({
       name: "computer_select",
       arguments: { windowId: "w_1" },
     });
 
-    expect(request).toHaveBeenCalledWith(
+    expect(request).toHaveBeenNthCalledWith(
+      1,
       "window.select",
       { windowId: "w_1" },
+      HOST_REQUEST_TIMEOUT_MS,
+    );
+    expect(request).toHaveBeenNthCalledWith(
+      2,
+      "snapshot",
+      { windowId: "w_1", mode: "a11y" },
       HOST_REQUEST_TIMEOUT_MS,
     );
     expect(result.isError).toBe(false);

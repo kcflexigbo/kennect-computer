@@ -69,6 +69,69 @@ public sealed class WindowInfo
     public bool Visible { get; set; }
 }
 
+/// <summary>A single accessibility node in a snapshot.</summary>
+public sealed class Node
+{
+    /// <summary>Ephemeral ID, <c>n&lt;generation&gt;:&lt;index&gt;</c>.</summary>
+    public string NodeId { get; set; } = string.Empty;
+
+    public string Role { get; set; } = string.Empty;
+
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>Platform accessibility identifier, when the app exposes one.</summary>
+    public string? Identifier { get; set; }
+
+    public Rect Bounds { get; set; } = new();
+
+    public bool Enabled { get; set; } = true;
+
+    public bool Focused { get; set; }
+
+    /// <summary>Generic action names supported by the node, e.g. <c>press</c>.</summary>
+    public List<string> Actions { get; set; } = [];
+}
+
+/// <summary>A downscaled PNG captured alongside a snapshot (Task 9).</summary>
+public sealed class ImagePayload
+{
+    /// <summary>Base64-encoded PNG bytes.</summary>
+    public string Data { get; set; } = string.Empty;
+
+    public string MimeType { get; set; } = "image/png";
+
+    /// <summary>Physical pixels per returned image pixel.</summary>
+    public double Scale { get; set; } = 1.0;
+
+    public Rect SourceBounds { get; set; } = new();
+}
+
+/// <summary>
+/// The result of <c>snapshot</c>: window identity, accessibility outline, and
+/// optionally an image. Node IDs are valid only for <see cref="Generation"/>.
+/// </summary>
+public sealed class Snapshot
+{
+    public WindowInfo Window { get; set; } = new();
+
+    public int Generation { get; set; }
+
+    public string? FocusedNodeId { get; set; }
+
+    public bool Modal { get; set; }
+
+    public List<Node> Nodes { get; set; } = [];
+
+    public int TotalNodes { get; set; }
+
+    public bool Truncated { get; set; }
+
+    public ImagePayload? Image { get; set; }
+
+    /// <summary>Present when perception degraded, e.g. an empty accessibility tree.</summary>
+    public string? Warning { get; set; }
+}
+
 /// <summary>Result of <c>windows.list</c>.</summary>
 public sealed class WindowsListResult
 {

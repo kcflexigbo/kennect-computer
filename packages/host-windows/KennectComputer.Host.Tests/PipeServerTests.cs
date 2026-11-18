@@ -4,6 +4,7 @@ using KennectComputer.Host.Auth;
 using KennectComputer.Host.Control;
 using KennectComputer.Host.Ipc;
 using KennectComputer.Host.Policy;
+using KennectComputer.Host.Uia;
 using KennectComputer.Host.Windows;
 
 namespace KennectComputer.Host.Tests;
@@ -145,7 +146,10 @@ public sealed class PipeServerTests
                 new FakeMonitorProvider(),
                 new FakeDesktopState(),
                 enumerator,
-                selection);
+                selection,
+                registry,
+                new UiaSnapshotter(new FakeUiaWalker(), _ => { }, _ => { }),
+                new SnapshotStore());
             var server = new PipeServer(pipeName, tokens, dispatcher);
             var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             var run = server.RunAsync(cancellation.Token);

@@ -122,7 +122,7 @@ public sealed class WindowEnumeratorTests
         Assert.True(registry.TryResolve(original.WindowId, out _));
     }
 
-    [Fact]
+    [LiveDesktopFact]
     public void ListsARealNotepadWindow()
     {
         // Windows 11's Notepad is a packaged app: the notepad.exe we launch may

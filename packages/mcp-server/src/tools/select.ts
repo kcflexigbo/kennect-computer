@@ -1,5 +1,5 @@
-import type { WindowInfo } from "@kennect/shared";
-import { WindowInfoSchema } from "@kennect/shared/schemas";
+import type { Snapshot, WindowInfo } from "@kennect/shared";
+import { SnapshotSchema, WindowInfoSchema } from "@kennect/shared/schemas";
 import { z } from "zod";
 
 import { HOST_REQUEST_TIMEOUT_MS } from "../config.js";
@@ -35,6 +35,8 @@ export interface SelectArgs {
 
 export interface SelectedWindowData {
   window: WindowInfo;
+  /** The accessibility outline captured immediately after selection (R21). */
+  snapshot: Snapshot;
 }
 
 export interface AmbiguousTargetData {
@@ -44,10 +46,12 @@ export interface AmbiguousTargetData {
 export type SelectData = SelectedWindowData | AmbiguousTargetData;
 
 /**
- * `computer_select`: asks the host to select and focus a window and returns
- * `{ ok: true, data: { window } }` (R18). Target resolution is fail-closed in
- * the host (R20); an ambiguous process/title target returns `INVALID_REQUEST`
- * with the candidate list under `data.candidates` instead of picking one.
+ * `computer_select`: asks the host to select and focus a window, then captures
+ * an accessibility snapshot of the selected window with `mode: "a11y"`. Returns
+ * `{ ok: true, data: { window, snapshot } }` (R18). Target resolution is
+ * fail-closed in the host (R20); an ambiguous process/title target returns
+ * `INVALID_REQUEST` with the candidate list under `data.candidates` instead of
+ * picking one.
  */
 export async function selectTool(
   host: HostRequester,
@@ -69,7 +73,22 @@ export async function selectTool(
       );
     }
 
-    return ok({ window: parsed.data.window });
+    const snapshotPayload = await host.request<unknown>(
+      "snapshot",
+      { windowId: parsed.data.window.windowId, mode: "a11y" },
+      HOST_REQUEST_TIMEOUT_MS,
+    );
+    const parsedSnapshot = SnapshotSchema.safeParse(snapshotPayload);
+
+    if (!parsedSnapshot.success) {
+      return failure(
+        "HOST_UNAVAILABLE",
+        "The host returned a snapshot that does not match protocol v1.",
+        { retryable: true },
+      );
+    }
+
+    return ok({ window: parsed.data.window, snapshot: parsedSnapshot.data });
   } catch (error) {
     if (error instanceof HostError) {
       const candidates = error.code === "INVALID_REQUEST"

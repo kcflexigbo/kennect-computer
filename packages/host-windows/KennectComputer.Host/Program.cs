@@ -4,6 +4,7 @@ using KennectComputer.Host.Auth;
 using KennectComputer.Host.Control;
 using KennectComputer.Host.Ipc;
 using KennectComputer.Host.Policy;
+using KennectComputer.Host.Uia;
 using KennectComputer.Host.Windows;
 
 namespace KennectComputer.Host;
@@ -37,7 +38,10 @@ internal static class Program
             new WindowsMonitorProvider(),
             new DesktopState(),
             windows,
-            selection);
+            selection,
+            registry,
+            new UiaSnapshotter(new WindowsUiaWalker()),
+            new SnapshotStore());
         var server = new PipeServer(pipeName, tokens, dispatcher);
 
         using var shutdown = new CancellationTokenSource();

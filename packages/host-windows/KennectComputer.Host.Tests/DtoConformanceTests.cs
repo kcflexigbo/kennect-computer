@@ -65,4 +65,51 @@ public sealed class DtoConformanceTests
         Assert.True(permissionsObject.ContainsKey("accessibility"));
         Assert.True(permissionsObject.ContainsKey("screenRecording"));
     }
+
+    [Fact]
+    public void SnapshotRoundTripsTheSharedFixture()
+    {
+        var fixturePath = Path.Combine(AppContext.BaseDirectory, "fixtures", "snapshot.json");
+        Assert.True(File.Exists(fixturePath), $"Shared fixture was not copied to the test output: {fixturePath}");
+        var fixtureJson = File.ReadAllText(fixturePath);
+
+        var snapshot = JsonSerializer.Deserialize<Snapshot>(fixtureJson, ProtocolJson.Options);
+        Assert.NotNull(snapshot);
+        Assert.Equal("w_1", snapshot.Window.WindowId);
+        Assert.Equal("Feishu", snapshot.Window.Title);
+        Assert.Equal(1, snapshot.Generation);
+        Assert.Equal("n1:2", snapshot.FocusedNodeId);
+        Assert.False(snapshot.Modal);
+        Assert.Equal(2, snapshot.TotalNodes);
+        Assert.False(snapshot.Truncated);
+        Assert.Null(snapshot.Image);
+        Assert.Null(snapshot.Warning);
+
+        Assert.Equal(2, snapshot.Nodes.Count);
+        var edit = snapshot.Nodes[1];
+        Assert.Equal("n1:2", edit.NodeId);
+        Assert.Equal("edit", edit.Role);
+        Assert.Equal("Message", edit.Name);
+        Assert.Equal("composer", edit.Identifier);
+        Assert.Equal(24, edit.Bounds.X);
+        Assert.Equal(904, edit.Bounds.Y);
+        Assert.Equal(1400, edit.Bounds.Width);
+        Assert.Equal(48, edit.Bounds.Height);
+        Assert.True(edit.Enabled);
+        Assert.True(edit.Focused);
+        Assert.Equal(["focus", "setValue"], edit.Actions);
+
+        var roundTripped = JsonSerializer.SerializeToNode(snapshot, ProtocolJson.Options);
+        var original = JsonNode.Parse(fixtureJson);
+        Assert.True(
+            JsonNode.DeepEquals(original, roundTripped),
+            $"Snapshot did not round-trip the shared fixture.\noriginal: {original}\nround-trip: {roundTripped}");
+
+        var root = roundTripped!.AsObject();
+        Assert.False(root.ContainsKey("hwnd"));
+        Assert.False(root.ContainsKey("image"));
+        Assert.False(root.ContainsKey("warning"));
+        Assert.False(root["window"]!.AsObject().ContainsKey("hwnd"));
+        Assert.Equal(8, root["nodes"]!.AsArray()[1]!.AsObject().Count);
+    }
 }

@@ -4,6 +4,7 @@ using KennectComputer.Host.Control;
 using KennectComputer.Host.Ipc;
 using KennectComputer.Host.Policy;
 using KennectComputer.Host.Protocol;
+using KennectComputer.Host.Uia;
 using KennectComputer.Host.Windows;
 
 namespace KennectComputer.Host.Tests;
@@ -69,7 +70,10 @@ public sealed class DispatcherTests
             new FakeMonitorProvider(),
             new FakeDesktopState(),
             enumerator,
-            selection);
+            selection,
+            registry,
+            NewSnapshotter(new FakeUiaWalker()),
+            new SnapshotStore());
         var token = tokens.Rotate();
 
         var hello = await dispatcher.HandleAsync(JsonDocument.Parse($$$"""{"jsonrpc":"2.0","id":1,"method":"hello","params":{"token":"{{{token}}}","protocolVersion":1,"clientName":"test"}}""").RootElement);
@@ -203,6 +207,142 @@ public sealed class DispatcherTests
             response.GetProperty("error").GetProperty("data").GetProperty("code").GetString());
     }
 
+    [Fact]
+    public async Task SnapshotReturnsTheAccessibilityOutline()
+    {
+        var raw = NotepadRawWindow();
+        var harness = NewSelectionHarness(raw);
+        var info = harness.Registry.Register(raw);
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("snapshot", $$"""{"windowId":"{{info.WindowId}}"}"""));
+
+        var result = response.GetProperty("result");
+        Assert.Equal(info.WindowId, result.GetProperty("window").GetProperty("windowId").GetString());
+        Assert.Equal(1, result.GetProperty("generation").GetInt32());
+        Assert.False(result.GetProperty("modal").GetBoolean());
+        Assert.False(result.TryGetProperty("image", out _));
+
+        var nodes = result.GetProperty("nodes");
+        Assert.Equal(2, nodes.GetArrayLength());
+        Assert.True(result.GetProperty("totalNodes").GetInt32() >= nodes.GetArrayLength());
+        Assert.False(result.GetProperty("truncated").GetBoolean());
+        Assert.StartsWith("n1:", nodes[0].GetProperty("nodeId").GetString());
+        Assert.Equal(
+            nodes[0].GetProperty("nodeId").GetString(),
+            result.GetProperty("focusedNodeId").GetString());
+        Assert.Equal(1, harness.Walker.Calls);
+    }
+
+    [Fact]
+    public async Task SnapshotVisionModeSkipsTheAccessibilityTree()
+    {
+        var harness = NewSelectionHarness(NotepadRawWindow());
+        var info = harness.Registry.Register(NotepadRawWindow());
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("snapshot", $$"""{"windowId":"{{info.WindowId}}","mode":"vision"}"""));
+
+        var result = response.GetProperty("result");
+        Assert.Equal(0, harness.Walker.Calls);
+        Assert.Equal(0, result.GetProperty("nodes").GetArrayLength());
+        Assert.Equal(0, result.GetProperty("totalNodes").GetInt32());
+        Assert.False(result.GetProperty("truncated").GetBoolean());
+        Assert.False(result.TryGetProperty("warning", out _));
+    }
+
+    [Fact]
+    public async Task SnapshotRequiresAWindowId()
+    {
+        var harness = NewSelectionHarness(NotepadRawWindow());
+
+        var response = await harness.Dispatcher.HandleAsync(Request("snapshot", "{}"));
+
+        Assert.Equal(
+            "INVALID_REQUEST",
+            response.GetProperty("error").GetProperty("data").GetProperty("code").GetString());
+        Assert.Equal(0, harness.Walker.Calls);
+    }
+
+    [Fact]
+    public async Task SnapshotRejectsAnUnknownMode()
+    {
+        var harness = NewSelectionHarness(NotepadRawWindow());
+        var info = harness.Registry.Register(NotepadRawWindow());
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("snapshot", $$"""{"windowId":"{{info.WindowId}}","mode":"semantic"}"""));
+
+        Assert.Equal(
+            "INVALID_REQUEST",
+            response.GetProperty("error").GetProperty("data").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task SnapshotOnADeadWindowReturnsWindowGone()
+    {
+        var raw = NotepadRawWindow();
+        var harness = NewSelectionHarness(raw);
+        var info = harness.Registry.Register(raw);
+        harness.Registry.MarkDeadForTests(raw.Hwnd);
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("snapshot", $$"""{"windowId":"{{info.WindowId}}"}"""));
+
+        Assert.Equal(
+            "WINDOW_GONE",
+            response.GetProperty("error").GetProperty("data").GetProperty("code").GetString());
+        Assert.Equal(0, harness.Walker.Calls);
+    }
+
+    [Fact]
+    public async Task SnapshotAcceptsTheImageFlagWithoutCapturing()
+    {
+        // Image capture arrives with Task 9; the flag is accepted now and the
+        // image stays absent from the snapshot payload.
+        var harness = NewSelectionHarness(NotepadRawWindow());
+        var info = harness.Registry.Register(NotepadRawWindow());
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("snapshot", $$"""{"windowId":"{{info.WindowId}}","image":true}"""));
+
+        var result = response.GetProperty("result");
+        Assert.False(result.TryGetProperty("image", out _));
+    }
+
+    [Fact]
+    public async Task SnapshotAppliesTheNodeCap()
+    {
+        var harness = NewSelectionHarness(NotepadRawWindow());
+        var info = harness.Registry.Register(NotepadRawWindow());
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("snapshot", $$"""{"windowId":"{{info.WindowId}}","maxNodes":1}"""));
+
+        var result = response.GetProperty("result");
+        Assert.Equal(1, result.GetProperty("nodes").GetArrayLength());
+        Assert.True(result.GetProperty("truncated").GetBoolean());
+    }
+
+    [Fact]
+    public async Task SnapshotReturnsTheWarningWhenTheTreeStaysEmpty()
+    {
+        var harness = NewSelectionHarness(
+            new FakeUiaWalker(alwaysEmpty: true),
+            NotepadRawWindow());
+        var info = harness.Registry.Register(NotepadRawWindow());
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("snapshot", $$"""{"windowId":"{{info.WindowId}}","mode":"a11y"}"""));
+
+        var result = response.GetProperty("result");
+        Assert.Equal(
+            "accessibility tree empty; vision fallback required",
+            result.GetProperty("warning").GetString());
+        Assert.Equal(0, result.GetProperty("nodes").GetArrayLength());
+        Assert.Equal(4, harness.Walker.Calls);
+    }
+
     private static RawWindow NotepadRawWindow()
         => new(1, 100, "Notepad", "Notepad", new Rect(0, 0, 10, 10))
         {
@@ -214,6 +354,9 @@ public sealed class DispatcherTests
             $$"""{"jsonrpc":"2.0","id":2,"method":"{{method}}","params":{{parametersJson}}}""").RootElement;
 
     private static SelectionHarness NewSelectionHarness(params RawWindow[] windows)
+        => NewSelectionHarness(new FakeUiaWalker(), windows);
+
+    private static SelectionHarness NewSelectionHarness(IUiaWalker walker, params RawWindow[] windows)
     {
         var tokens = TokenStore.CreateForTests(NewTempDir());
         tokens.Rotate();
@@ -228,14 +371,18 @@ public sealed class DispatcherTests
             new ForegroundService(focus),
             enumerator,
             pid => $@"C:\tests\{pid}.exe");
+        var fakeWalker = walker as FakeUiaWalker ?? new FakeUiaWalker();
         var dispatcher = new JsonRpcDispatcher(
             tokens,
             new FakeMonitorProvider(),
             new FakeDesktopState(),
             enumerator,
-            selection);
+            selection,
+            registry,
+            NewSnapshotter(walker),
+            new SnapshotStore());
 
-        return new SelectionHarness(dispatcher, registry, focus);
+        return new SelectionHarness(dispatcher, registry, focus, fakeWalker);
     }
 
     private static JsonRpcDispatcher NewDispatcher(TokenStore tokens, FakeDesktopState? desktop = null)
@@ -254,13 +401,20 @@ public sealed class DispatcherTests
             new FakeMonitorProvider(),
             desktop ?? new FakeDesktopState(),
             enumerator,
-            selection);
+            selection,
+            registry,
+            NewSnapshotter(new FakeUiaWalker()),
+            new SnapshotStore());
     }
+
+    private static UiaSnapshotter NewSnapshotter(IUiaWalker walker)
+        => new(walker, _ => { }, _ => { });
 
     private sealed record SelectionHarness(
         JsonRpcDispatcher Dispatcher,
         WindowRegistry Registry,
-        FakeWin32 Focus);
+        FakeWin32 Focus,
+        FakeUiaWalker Walker);
 
     private static string NewTempDir()
     {

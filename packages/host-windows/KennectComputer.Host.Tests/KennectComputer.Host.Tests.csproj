@@ -25,6 +25,7 @@
 
   <ItemGroup>
     <None Include="..\..\shared\fixtures\status.json" Link="fixtures\status.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\shared\fixtures\snapshot.json" Link="fixtures\snapshot.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
