@@ -293,6 +293,8 @@ internal sealed record FakeUiaNode : IUiaNode
 
     public bool Focused { get; init; }
 
+    public bool IsPassword { get; init; }
+
     public IReadOnlyList<string> Actions { get; init; } = [];
 
     public string? Text { get; set; }
@@ -331,6 +333,7 @@ internal sealed record FakeUiaNode : IUiaNode
                 model.Bounds.Y,
                 model.Bounds.Width,
                 model.Bounds.Height),
+            IsPassword = model.IsPassword,
             Actions = model.Actions,
         };
     }
@@ -361,15 +364,15 @@ internal sealed record FakeUiaNode : IUiaNode
     public bool TryGetText(out string? text)
     {
         Calls.Add(nameof(TryGetText));
-        text = SupportsGetText ? Text : null;
-        return SupportsGetText;
+        text = SupportsGetText && !IsPassword ? Text : null;
+        return SupportsGetText && !IsPassword;
     }
 
     public bool TryGetValue(out string? value)
     {
         Calls.Add(nameof(TryGetValue));
-        value = SupportsGetValue ? Value : null;
-        return SupportsGetValue;
+        value = SupportsGetValue && !IsPassword ? Value : null;
+        return SupportsGetValue && !IsPassword;
     }
 
     private bool Record(string call, bool supported)

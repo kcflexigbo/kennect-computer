@@ -158,6 +158,31 @@ public sealed class M2InputTests
     }
 
     [Fact]
+    public async Task PasswordFieldContentIsNeverCapturedOrReturned()
+    {
+        using var window = M2TestWindow.Start();
+        var harness = new Harness(window);
+        var snapshot = harness.Snapshot(image: false);
+        var password = Find(snapshot, "edit", "Password");
+
+        // The host-internal walker value is not observable directly; read_text
+        // and find are the two paths that could expose it.
+        var readFailure = await Assert.ThrowsAsync<ActionFailedException>(() =>
+            harness.ReadText.ExecuteAsync(
+                new ReadTextRequest { NodeId = password.NodeId },
+                CancellationToken.None));
+
+        Assert.Equal(ErrorCode.InvalidRequest, readFailure.Code);
+        Assert.DoesNotContain(M2TestWindow.PasswordText, readFailure.Message);
+
+        var found = await harness.Find.ExecuteAsync(
+            new FindRequest { Text = M2TestWindow.PasswordText },
+            CancellationToken.None);
+
+        Assert.Empty(found.Matches);
+    }
+
+    [Fact]
     public async Task ScrollsTheListAndChangesItsTopIndex()
     {
         using var window = M2TestWindow.Start();
@@ -501,6 +526,7 @@ public sealed class M2InputTests
             Key = new KeyAction(preflight, Input);
             Scroll = new ScrollAction(Resolver, preflight, Input, Snapshots);
             ReadText = new ReadTextAction(Resolver, Snapshots, Selection, Registry);
+            Find = new FindAction(Walker, Snapshotter, Snapshots, Selection, Registry);
             Wait = new WaitAction(
                 Walker,
                 new WindowEnumerator(Windows, Registry),
@@ -551,6 +577,8 @@ public sealed class M2InputTests
         public ScrollAction Scroll { get; }
 
         public ReadTextAction ReadText { get; }
+
+        public FindAction Find { get; }
 
         public WaitAction Wait { get; }
 

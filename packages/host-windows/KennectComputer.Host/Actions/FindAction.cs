@@ -177,8 +177,10 @@ public sealed class FindAction
         }
 
         // The value is host-internal (never serialized): it lets find match an
-        // edit's content even when the element has no accessible name.
+        // edit's content even when the element has no accessible name. A
+        // password field's value is never captured or matched (DESIGN §8).
         return nodeMap.TryGetValue(node.NodeId, out var model)
+            && !model.IsPassword
             && model.Value is not null
             && model.Value.Contains(text, StringComparison.OrdinalIgnoreCase);
     }

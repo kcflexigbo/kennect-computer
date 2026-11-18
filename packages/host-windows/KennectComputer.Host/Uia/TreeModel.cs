@@ -18,9 +18,16 @@ public sealed record TreeModel
     /// <summary>
     /// The element's text/value at capture time, used by expect/find/wait for
     /// content matching. Host-internal only: the protocol <see cref="Node"/>
-    /// shape is frozen and this is never serialized or copied into it.
+    /// shape is frozen and this is never serialized or copied into it. Always
+    /// null for a password field (DESIGN §8 hard rule 4).
     /// </summary>
     internal string? Value { get; init; }
+
+    /// <summary>
+    /// True when the element is a password field. The walker never captures its
+    /// value, and find/wait/expect must not match against it.
+    /// </summary>
+    public bool IsPassword { get; init; }
 
     public Rect Bounds { get; init; } = new();
 

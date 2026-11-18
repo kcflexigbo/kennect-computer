@@ -113,6 +113,15 @@ public sealed class ReadTextAction
                 ErrorCode.StaleSnapshot,
                 "The node no longer matches the live element; take a new snapshot.");
 
+        // DESIGN §8 hard rule 4: password fields are never read, even when the
+        // provider exposes a value.
+        if (live.IsPassword)
+        {
+            throw Failure(
+                ErrorCode.InvalidRequest,
+                "The node is a password field; its content is never read.");
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
         var text = ReadText(live, cancellationToken);
 

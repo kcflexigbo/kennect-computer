@@ -204,6 +204,9 @@ internal sealed class WindowsUiaNode : IUiaNode
         Focused = WindowsUiaWalker.Read(
             () => element.Properties.HasKeyboardFocus.ValueOrDefault,
             false);
+        IsPassword = WindowsUiaWalker.Read(
+            () => element.Properties.IsPassword.ValueOrDefault,
+            false);
         Actions = WindowsUiaWalker.ReadActions(element);
     }
 
@@ -247,6 +250,8 @@ internal sealed class WindowsUiaNode : IUiaNode
     public bool Enabled { get; }
 
     public bool Focused { get; }
+
+    public bool IsPassword { get; }
 
     public IReadOnlyList<string> Actions { get; }
 
@@ -320,6 +325,13 @@ internal sealed class WindowsUiaNode : IUiaNode
     {
         text = null;
 
+        // Defence in depth behind the walker's suppression: even if a
+        // password element exposes TextPattern, its content is never returned.
+        if (IsPassword)
+        {
+            return false;
+        }
+
         try
         {
             var textPattern = _element.Patterns.Text.PatternOrDefault;
@@ -340,6 +352,13 @@ internal sealed class WindowsUiaNode : IUiaNode
     public bool TryGetValue(out string? value)
     {
         value = null;
+
+        // Defence in depth behind the walker's suppression: a password
+        // ValuePattern value is never returned.
+        if (IsPassword)
+        {
+            return false;
+        }
 
         try
         {

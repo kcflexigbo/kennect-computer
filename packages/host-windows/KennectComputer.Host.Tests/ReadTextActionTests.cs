@@ -214,6 +214,26 @@ public sealed class ReadTextActionTests
     }
 
     [Fact]
+    public async Task APasswordNodeIsInvalidAndItsContentIsNeverRead()
+    {
+        var target = Editor();
+        var live = FakeUiaNode.From(target) with { IsPassword = true };
+        live.Text = "hunter2";
+        live.Value = "hunter2";
+        var harness = Harness.Create(new FakeUiaNodeResolver(live));
+        harness.SaveNode("n1:1", target);
+
+        var failure = await Assert.ThrowsAsync<ActionFailedException>(() =>
+            harness.Action.ExecuteAsync(
+                new ReadTextRequest { NodeId = "n1:1" },
+                CancellationToken.None));
+
+        Assert.Equal(ErrorCode.InvalidRequest, failure.Code);
+        Assert.DoesNotContain("hunter2", failure.Message);
+        Assert.Empty(live.Calls);
+    }
+
+    [Fact]
     public async Task CjkTextRoundTripsUnchanged()
     {
         var target = Editor();

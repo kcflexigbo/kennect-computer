@@ -212,6 +212,33 @@ public sealed class WaitActionTests
     }
 
     [Fact]
+    public async Task TextMatchingIgnoresPasswordFieldValues()
+    {
+        var password = new TreeModel
+        {
+            Role = "edit",
+            Name = "Password",
+            IsPassword = true,
+            Value = "hunter2",
+        };
+        var harness = Harness.ForNodes(_ => Tree(password));
+
+        // The value is not observable, so the condition is absent on the
+        // first poll and present:false succeeds immediately instead of waiting
+        // out the deadline.
+        var result = await harness.Action.ExecuteAsync(
+            new WaitRequest
+            {
+                Condition = new WaitTextCondition { Contains = "hunter2" },
+                Present = false,
+            },
+            CancellationToken.None);
+
+        Assert.Equal(0L, result.ElapsedMs);
+        Assert.Equal(1, harness.Walker.Calls);
+    }
+
+    [Fact]
     public async Task TextConditionsOnlyMatchNodesThatMatchTheSelector()
     {
         // The only value containing the text belongs to a text node, so a

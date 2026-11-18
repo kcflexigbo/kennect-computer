@@ -27,6 +27,12 @@ public interface IUiaNode
 
     bool Focused { get; }
 
+    /// <summary>
+    /// True when the element is a password field. Its text/value is never
+    /// readable through this interface (DESIGN §8 hard rule 4).
+    /// </summary>
+    bool IsPassword { get; }
+
     /// <summary>Generic action names the live element supports.</summary>
     IReadOnlyList<string> Actions { get; }
 

@@ -241,6 +241,7 @@ public sealed class WaitAction
                                 text.Role,
                                 text.Name,
                                 text.Identifier)
+                                && !candidate.IsPassword
                                 && candidate.Value is not null
                                 && candidate.Value.Contains(
                                     text.Contains,

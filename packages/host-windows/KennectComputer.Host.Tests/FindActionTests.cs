@@ -63,6 +63,32 @@ public sealed class FindActionTests
     }
 
     [Fact]
+    public async Task PasswordValuesAreNeverMatchable()
+    {
+        var password = new TreeModel
+        {
+            Role = "edit",
+            Name = "Password",
+            IsPassword = true,
+            Value = "hunter2",
+        };
+        var harness = Harness.Create(Tree(password));
+
+        var byValue = await harness.Action.ExecuteAsync(
+            new FindRequest { Text = "hunter2" },
+            CancellationToken.None);
+
+        Assert.Empty(byValue.Matches);
+
+        // The node still matches by its accessible name.
+        var byName = await harness.Action.ExecuteAsync(
+            new FindRequest { Text = "Password" },
+            CancellationToken.None);
+
+        Assert.Equal("Password", Assert.Single(byName.Matches).Name);
+    }
+
+    [Fact]
     public async Task RoleFiltersExactlyByRole()
     {
         var harness = Harness.Create(Tree(

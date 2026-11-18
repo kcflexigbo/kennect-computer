@@ -317,6 +317,9 @@ internal sealed class M2TestWindow : IDisposable
 {
     public const string WindowTitle = "Kennect M2 Test";
 
+    /// <summary>A password value the tests assert is never captured or returned.</summary>
+    public const string PasswordText = "KennectSecret123";
+
     private readonly OwnedWindowHost<M2TestForm> _host;
 
     private M2TestWindow(OwnedWindowHost<M2TestForm> host)
@@ -432,10 +435,19 @@ internal sealed class M2TestForm : Form
             Size = new Size(300, 24),
         };
 
+        Password = new TextBox
+        {
+            AccessibleName = "Password",
+            Text = M2TestWindow.PasswordText,
+            UseSystemPasswordChar = true,
+            Location = new Point(20, 100),
+            Size = new Size(300, 24),
+        };
+
         Items = new ListBox
         {
             AccessibleName = "List",
-            Location = new Point(20, 110),
+            Location = new Point(20, 135),
             Size = new Size(300, 150),
             IntegralHeight = false,
         };
@@ -447,7 +459,7 @@ internal sealed class M2TestForm : Form
 
         ActionButton.Click += (_, _) => ResultLabel.Text = "clicked";
 
-        Controls.AddRange([ActionButton, ResultLabel, Editor, Items]);
+        Controls.AddRange([ActionButton, ResultLabel, Editor, Password, Items]);
     }
 
     public Button ActionButton { get; }
@@ -455,6 +467,8 @@ internal sealed class M2TestForm : Form
     public Label ResultLabel { get; }
 
     public SlowPasteTextBox Editor { get; }
+
+    public TextBox Password { get; }
 
     public ListBox Items { get; }
 }

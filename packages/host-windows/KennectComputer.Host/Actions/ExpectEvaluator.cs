@@ -99,6 +99,7 @@ public sealed class ExpectEvaluator
             && AnyNode(
                 tree,
                 node => SelectorMatches(node, predicate.Role, predicate.Name, predicate.Identifier)
+                    && !node.IsPassword
                     && node.Value is not null
                     && node.Value.Contains(predicate.Contains, StringComparison.OrdinalIgnoreCase));
 

@@ -157,6 +157,36 @@ public sealed class ExpectEvaluatorTests
     }
 
     [Fact]
+    public async Task TextPredicateIgnoresPasswordValues()
+    {
+        var tree = new TreeModel
+        {
+            Role = "window",
+            Name = "Sign in",
+            Children =
+            [
+                new TreeModel
+                {
+                    Role = "edit",
+                    Name = "Password",
+                    IsPassword = true,
+                    Value = "hunter2",
+                },
+            ],
+        };
+        var walker = new FakeUiaWalker(tree);
+
+        var result = await NewEvaluator(walker)
+            .EvaluateAsync(
+                Hwnd,
+                [new ExpectText { Name = "Password", Contains = "hunter2" }],
+                CancellationToken.None);
+
+        Assert.False(result.Ok);
+        Assert.Equal("text:hunter2", result.FailedPredicate);
+    }
+
+    [Fact]
     public async Task TextPredicateFailsWhenTheValueDoesNotContainTheText()
     {
         var result = await EvaluateAsync(

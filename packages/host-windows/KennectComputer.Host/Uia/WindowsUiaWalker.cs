@@ -100,7 +100,12 @@ public sealed class WindowsUiaWalker : IUiaWalker
         var enabled = Read(() => element.Properties.IsEnabled.ValueOrDefault, true);
         var offscreen = Read(() => element.Properties.IsOffscreen.ValueOrDefault, false);
         var focused = Read(() => element.Properties.HasKeyboardFocus.ValueOrDefault, false);
-        var value = ReadValue(element);
+
+        // DESIGN §8 hard rule 4: a password field's value must never be
+        // captured. The flag is cached with the element, and the value read is
+        // skipped entirely for a password element.
+        var isPassword = Read(() => element.Properties.IsPassword.ValueOrDefault, false);
+        var value = isPassword ? null : ReadValue(element);
 
         var children = new List<TreeModel>();
         AutomationElement? child = Read<AutomationElement?>(
@@ -129,6 +134,7 @@ public sealed class WindowsUiaWalker : IUiaWalker
             Name = name ?? string.Empty,
             Identifier = string.IsNullOrEmpty(identifier) ? null : identifier,
             Value = value,
+            IsPassword = isPassword,
             Bounds = ToRect(bounds),
             Enabled = enabled,
             Offscreen = offscreen,
@@ -159,6 +165,7 @@ public sealed class WindowsUiaWalker : IUiaWalker
         cache.Add(properties.IsEnabled);
         cache.Add(properties.IsOffscreen);
         cache.Add(properties.HasKeyboardFocus);
+        cache.Add(properties.IsPassword);
 
         // The value is read through the value pattern for edit-like controls;
         // the pattern is cached here so the read stays inside the element's
