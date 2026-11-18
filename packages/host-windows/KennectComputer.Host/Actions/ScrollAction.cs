@@ -132,7 +132,7 @@ public sealed class ScrollAction
             .ConfigureAwait(false);
 
         // Aim at where the element is now, not where the snapshot captured it.
-        var center = BoundsCenter(live.Bounds);
+        var center = CoordinateTarget.BoundsCenter(live.Bounds);
         cancellationToken.ThrowIfCancellationRequested();
         _input.MoveTo(center.X, center.Y);
         cancellationToken.ThrowIfCancellationRequested();
@@ -154,33 +154,15 @@ public sealed class ScrollAction
             ? stored
             : null;
 
-        if (request.Space == CoordinateSpace.Image && state is null)
-        {
-            throw Failure(
-                ErrorCode.InvalidRequest,
-                "An image-space scroll requires a snapshot with an image; "
-                + "snapshot the window with image enabled.");
-        }
-
-        // Screen space is physical and independent of the snapshot; the
-        // mapper's screen path reads only the current window, so an empty
-        // state stands in when no snapshot has been taken.
-        var mapping = CoordinateMapper.Map(
-            state ?? ScreenOnlyState(window.Info),
+        // The shared helper owns the image-space snapshot guard, the mapper
+        // call, and the no-snapshot screen-only workaround.
+        var point = CoordinateTarget.Resolve(
+            state,
             window.Info,
             request.X!.Value,
             request.Y!.Value,
-            request.Space);
-
-        if (mapping.Error is { } error)
-        {
-            throw Failure(error, CoordinateErrorMessage(error));
-        }
-
-        if (mapping.Point is not { } point)
-        {
-            throw Failure(ErrorCode.InvalidRequest, "The scroll coordinates could not be mapped.");
-        }
+            request.Space,
+            "scroll");
 
         await _preflight
             .FocusAsync(
@@ -196,31 +178,6 @@ public sealed class ScrollAction
 
         return Succeeded(window.Info);
     }
-
-    private static Input.Point BoundsCenter(Rect bounds) => new(
-        bounds.X + (bounds.Width / 2),
-        bounds.Y + (bounds.Height / 2));
-
-    /// <summary>
-    /// A stand-in state for screen-space mapping when no snapshot exists. Only
-    /// the current window reaches the mapper's screen path; the snapshot part
-    /// of the state is never read.
-    /// </summary>
-    private static SnapshotState ScreenOnlyState(WindowInfo window) => new(
-        Generation: 0,
-        Nodes: new Dictionary<string, TreeModel>(StringComparer.Ordinal),
-        WindowBounds: window.Bounds,
-        Image: null);
-
-    private static string CoordinateErrorMessage(ErrorCode error) => error switch
-    {
-        ErrorCode.StaleSnapshot =>
-            "The window moved or resized since the snapshot; "
-            + "take a new snapshot or use screen coordinates.",
-        ErrorCode.InvalidRequest =>
-            "The coordinates are outside the target window or the snapshot has no image.",
-        _ => $"The scroll coordinates could not be mapped ({error.ToProtocolCode()}).",
-    };
 
     private static ActionResult Succeeded(WindowInfo window) => new()
     {
