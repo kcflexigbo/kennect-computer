@@ -17,6 +17,8 @@ export interface AuditEntry {
   windowId?: string;
   process?: string;
   nodeId?: string;
+  x?: number;
+  y?: number;
   textLength?: number;
   textSha256?: string;
   result: string;
@@ -94,6 +96,12 @@ export class AuditLog implements AuditSink {
       }
       if (entry.nodeId !== undefined) {
         record.nodeId = entry.nodeId;
+      }
+      if (entry.x !== undefined) {
+        record.x = entry.x;
+      }
+      if (entry.y !== undefined) {
+        record.y = entry.y;
       }
       if (entry.textLength !== undefined) {
         record.textLength = entry.textLength;

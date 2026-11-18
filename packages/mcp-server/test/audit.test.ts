@@ -395,6 +395,75 @@ describe("MCP audit wiring", () => {
     expect(JSON.stringify(lines)).not.toContain("Untitled - Notepad");
   });
 
+  it("records the acted-on window and coordinates for an action tool", async () => {
+    const dir = temporaryDirectory();
+    const log = new AuditLog({ dir, retentionDays: 7, now: fixedNow });
+    const request = vi.fn().mockResolvedValue({
+      window: notepadWindow,
+      action: "click",
+      method: "coordinates",
+      needsObservation: true,
+    });
+    const client = await connect(providerFor({ request }), {
+      audit: log,
+      sessionId: "s_action",
+    });
+
+    const result = await client.callTool({
+      name: "computer_click",
+      arguments: { x: 10, y: 20, space: "screen" },
+    });
+
+    expect(result.isError).toBe(false);
+    const [line] = readAuditLines(dir);
+    expect(line).toMatchObject({
+      tool: "computer_click",
+      windowId: "w_1",
+      process: "notepad",
+      x: 10,
+      y: 20,
+      result: "ok",
+    });
+  });
+
+  it("records the acted-on window for a batch from its step results", async () => {
+    const dir = temporaryDirectory();
+    const log = new AuditLog({ dir, retentionDays: 7, now: fixedNow });
+    const request = vi.fn().mockResolvedValue({
+      steps: [
+        {
+          index: 0,
+          kind: "click",
+          ok: true,
+          data: {
+            window: notepadWindow,
+            action: "click",
+            method: "pattern",
+            needsObservation: true,
+          },
+        },
+      ],
+    });
+    const client = await connect(providerFor({ request }), {
+      audit: log,
+      sessionId: "s_batch",
+    });
+
+    const result = await client.callTool({
+      name: "computer_batch",
+      arguments: { steps: [{ kind: "click", nodeId: "n3:2" }] },
+    });
+
+    expect(result.isError).toBe(false);
+    const [line] = readAuditLines(dir);
+    expect(line).toMatchObject({
+      tool: "computer_batch",
+      windowId: "w_1",
+      process: "notepad",
+      result: "ok",
+    });
+  });
+
   it("records the error code for a failed call without the message", async () => {
     const dir = temporaryDirectory();
     const log = new AuditLog({ dir, retentionDays: 7, now: fixedNow });

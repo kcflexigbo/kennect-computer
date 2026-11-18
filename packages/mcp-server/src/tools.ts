@@ -165,6 +165,7 @@ async function runTool(
         sessionId: audit.sessionId,
         tool: tool.name,
         ...auditTarget(args),
+        ...auditActedOnWindow(result),
         ...auditTextFields(tool.name, args),
         result: auditResultCode(result),
         durationMs: Math.max(0, Date.now() - startedAt),
@@ -181,11 +182,16 @@ async function runTool(
   }
 }
 
-/** Copies only the opaque target identifiers; title and message text are excluded. */
+/**
+ * Copies only the opaque target identifiers and coordinates; title and
+ * message text are excluded. M2 actions target the selected window
+ * implicitly, so a coordinate click or scroll records its point here and the
+ * acted-on window is merged from the result below (DESIGN §14).
+ */
 function auditTarget(
   args: unknown,
-): Pick<AuditEntryInput, "windowId" | "process" | "nodeId"> {
-  const target: Pick<AuditEntryInput, "windowId" | "process" | "nodeId"> = {};
+): Pick<AuditEntryInput, "windowId" | "process" | "nodeId" | "x" | "y"> {
+  const target: Pick<AuditEntryInput, "windowId" | "process" | "nodeId" | "x" | "y"> = {};
 
   if (args === null || typeof args !== "object") {
     return target;
@@ -199,7 +205,121 @@ function auditTarget(
     }
   }
 
+  const coordinates = coordinateTarget(record);
+  if (coordinates !== undefined) {
+    target.x = coordinates.x;
+    target.y = coordinates.y;
+  }
+
   return target;
+}
+
+/** The first coordinate pair in the arguments, including a batch step. */
+function coordinateTarget(
+  record: Record<string, unknown>,
+): { x: number; y: number } | undefined {
+  const direct = coordinatePair(record);
+  if (direct !== undefined) {
+    return direct;
+  }
+
+  const steps = record.steps;
+  if (!Array.isArray(steps)) {
+    return undefined;
+  }
+
+  for (const step of steps) {
+    if (step !== null && typeof step === "object") {
+      const pair = coordinatePair(step as Record<string, unknown>);
+      if (pair !== undefined) {
+        return pair;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function coordinatePair(
+  record: Record<string, unknown>,
+): { x: number; y: number } | undefined {
+  const x = record.x;
+  const y = record.y;
+  return typeof x === "number" && Number.isFinite(x)
+    && typeof y === "number" && Number.isFinite(y)
+    ? { x, y }
+    : undefined;
+}
+
+/**
+ * The window the host reports acting on. Every M2 action result carries
+ * `data.window`; a batch carries it on each successful step, so the first step
+ * with one identifies the selected window the batch ran against. Result
+ * identity wins over argument identity because it is what actually happened.
+ */
+function auditActedOnWindow(
+  result: CallToolResult | undefined,
+): Pick<AuditEntryInput, "windowId" | "process"> {
+  const window = findResultWindow(result?.structuredContent);
+  if (window === undefined) {
+    return {};
+  }
+
+  const actedOn: Pick<AuditEntryInput, "windowId" | "process"> = {};
+  if (typeof window.windowId === "string" && window.windowId.length > 0) {
+    actedOn.windowId = window.windowId;
+  }
+  if (typeof window.processName === "string" && window.processName.length > 0) {
+    actedOn.process = window.processName;
+  }
+  return actedOn;
+}
+
+function findResultWindow(value: unknown): Record<string, unknown> | undefined {
+  if (value === null || typeof value !== "object") {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const data = record.data;
+  if (data === null || typeof data !== "object") {
+    return undefined;
+  }
+
+  const direct = windowIdentity(data);
+  if (direct !== undefined) {
+    return direct;
+  }
+
+  const steps = (data as Record<string, unknown>).steps;
+  if (!Array.isArray(steps)) {
+    return undefined;
+  }
+
+  for (const step of steps) {
+    if (step === null || typeof step !== "object") {
+      continue;
+    }
+
+    const stepData = (step as Record<string, unknown>).data;
+    const identity = windowIdentity(stepData);
+    if (identity !== undefined) {
+      return identity;
+    }
+  }
+
+  return undefined;
+}
+
+function windowIdentity(value: unknown): Record<string, unknown> | undefined {
+  if (value === null || typeof value !== "object") {
+    return undefined;
+  }
+
+  const window = (value as Record<string, unknown>).window;
+  return window !== null && typeof window === "object"
+    ? (window as Record<string, unknown>)
+    : undefined;
 }
 
 /**
