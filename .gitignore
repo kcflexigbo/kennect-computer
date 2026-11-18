@@ -14,6 +14,9 @@ dist/
 .mcp.json
 .mcp.json.bak*
 
+# Claude Code host-managed worktrees (project settings.json is committed)
+.claude/worktrees/
+
 # .NET build output
 bin/
 obj/

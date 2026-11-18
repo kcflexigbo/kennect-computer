@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__kennect-computer__computer_status",
+      "mcp__kennect-computer__computer_windows",
+      "mcp__kennect-computer__computer_select",
+      "mcp__kennect-computer__computer_snapshot",
+      "mcp__kennect-computer__computer_focus",
+      "mcp__kennect-computer__computer_stop"
+    ]
+  }
+}
