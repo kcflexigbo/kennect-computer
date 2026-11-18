@@ -27,8 +27,10 @@ namespace KennectComputer.Host.Actions;
 /// the typed text is never left behind. The chord releases Ctrl in its own
 /// <c>finally</c>, so a failed or partially delivered key event cannot leave a
 /// stuck modifier. If the clipboard cannot be read there is no way to put the
-/// user's content back, so the action fails with <c>INVALID_REQUEST</c> before
-/// writing anything. Value sets the accessibility value where supported and
+/// user's content back, and if it holds non-text content (an image, files, or
+/// ANSI-only text) a text restore would destroy it; either case fails with
+/// <c>INVALID_REQUEST</c> before writing anything. Value sets the
+/// accessibility value where supported and
 /// falls back to paste. Keys sends one Unicode event per UTF-16 code unit and
 /// never touches the clipboard. Action failures are raised as
 /// <see cref="ActionFailedException"/>; cancellation and input-send failures
@@ -211,6 +213,29 @@ public sealed class TypeAction
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+
+        // A text-only save/restore cannot put back an image, files, or ANSI
+        // text. Refuse before writing anything rather than empty the user's
+        // clipboard and restore an empty string.
+        bool unsupported;
+        try
+        {
+            unsupported = _clipboard.HasUnsupportedContent();
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            throw Failure(
+                ErrorCode.InvalidRequest,
+                "The clipboard could not be read; no text was typed.");
+        }
+
+        if (unsupported)
+        {
+            throw Failure(
+                ErrorCode.InvalidRequest,
+                "The clipboard contains non-text content; paste cannot preserve it, "
+                + "so no text was typed.");
+        }
 
         string? saved;
         try

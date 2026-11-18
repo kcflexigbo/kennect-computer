@@ -185,6 +185,8 @@ public sealed class InputSenderTests
 
         public string? GetText() => _text;
 
+        public bool HasUnsupportedContent() => false;
+
         public void SetText(string text) => _text = text;
     }
 }

@@ -7,6 +7,13 @@ namespace KennectComputer.Host.Input;
 public interface IClipboard
 {
     /// <summary>
+    /// True when the clipboard holds content a Unicode-text save/restore
+    /// cannot preserve: an image, files, HTML, or ANSI-only text. Paste must
+    /// refuse rather than empty the clipboard and restore nothing.
+    /// </summary>
+    bool HasUnsupportedContent();
+
+    /// <summary>
     /// Returns the clipboard's Unicode text, or null when it holds no text.
     /// </summary>
     string? GetText();

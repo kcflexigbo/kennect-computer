@@ -236,6 +236,24 @@ public sealed class TypeActionTests
     }
 
     [Fact]
+    public async Task PasteRefusesWhenTheClipboardHoldsNonTextContent()
+    {
+        // An image or copied files have no CF_UNICODETEXT; emptying and
+        // restoring "" would destroy the user's content.
+        var harness = Harness.Create(new FakeUiaNodeResolver(null));
+        harness.Clipboard.UnsupportedContent = true;
+
+        var failure = await Assert.ThrowsAsync<ActionFailedException>(() =>
+            harness.Action.ExecuteAsync(
+                new TypeRequest { Text = "hello" },
+                CancellationToken.None));
+
+        Assert.Equal(ErrorCode.InvalidRequest, failure.Code);
+        Assert.Empty(harness.Clipboard.Sets);
+        Assert.Empty(harness.Input.Calls);
+    }
+
+    [Fact]
     public async Task AFailedClipboardSaveIsInvalidAndTypesNothing()
     {
         var harness = Harness.Create(new FakeUiaNodeResolver(null));
@@ -741,11 +759,19 @@ internal sealed class FakeClipboard : IClipboard
 
     public Exception? GetFailure { get; set; }
 
+    /// <summary>
+    /// True when the clipboard holds a non-text format (an image, files, or
+    /// ANSI-only text) that a text-only save/restore would destroy.
+    /// </summary>
+    public bool UnsupportedContent { get; set; }
+
     /// <summary>1-based successful-or-not <see cref="SetText"/> attempt to fail; 0 disables.</summary>
     public int FailSetAttempt { get; set; }
 
     /// <summary>Runs after each successful write, so tests can observe restore ordering.</summary>
     public Action<string>? OnSet { get; set; }
+
+    public bool HasUnsupportedContent() => UnsupportedContent;
 
     public string? GetText()
     {

@@ -133,10 +133,14 @@ consumed the paste, then restores the saved text. When the target node exposes
 a value or text, the host polls it for the pasted content (bounded at 2
 seconds); when the target's content cannot be read (for example a paste with
 no `nodeId`), it waits for the window's input queue to drain instead, also
-bounded. The clipboard is restored on every path, including failure and
-cancellation, and the typed text is never left behind. A target that defers
-the paste beyond the bound cannot be observed: the host still restores the
-clipboard after the bound, but cannot prove that target read the paste. Paste
+bounded. The host restores the saved clipboard or clears it; if another app
+holds the clipboard, the typed text may remain until that app releases it, so
+the restore is best-effort. Paste refuses with `INVALID_REQUEST` before
+writing anything when the clipboard holds non-text content (an image, copied
+files, or ANSI-only text), because a text-only restore would destroy it. A
+target that defers the paste beyond the bound cannot be observed: the host
+still restores the clipboard after the bound, but cannot prove that target
+read the paste. Paste
 is the default because it is fast and reliable for CJK and long text. `value`
 sets the accessibility value where the control supports it. `keys` types one
 Unicode event per UTF-16 code unit and never touches the clipboard.

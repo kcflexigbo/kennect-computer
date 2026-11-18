@@ -16,10 +16,54 @@ namespace KennectComputer.Host.Input;
 /// </summary>
 public sealed class WindowsClipboard : IClipboard
 {
+    private const uint CfText = 1;
+    private const uint CfOemText = 7;
     private const uint CfUnicodeText = 13;
+    private const uint CfLocale = 16;
     private const uint GmemMoveable = 0x0002;
     private const int OpenAttempts = 10;
     private const int OpenRetryDelayMilliseconds = 10;
+
+    /// <summary>
+    /// Enumerates the clipboard formats. Any format outside the plain-text set
+    /// (an image, copied files, HTML, …) cannot survive a text-only
+    /// save/restore, and text without CF_UNICODETEXT is ANSI-only, which
+    /// <see cref="GetText"/> would read as no text and then destroy. An empty
+    /// clipboard is safe: the restore writes an empty text clipboard.
+    /// </summary>
+    public bool HasUnsupportedContent()
+    {
+        BeginOpen();
+        try
+        {
+            var hasUnicodeText = GetClipboardData(CfUnicodeText) != nint.Zero;
+            var sawFormat = false;
+
+            uint format = 0;
+            while ((format = EnumClipboardFormats(format)) != 0)
+            {
+                sawFormat = true;
+                if (format is not (CfText or CfOemText or CfUnicodeText or CfLocale))
+                {
+                    return true;
+                }
+            }
+
+            var error = Marshal.GetLastWin32Error();
+            if (error != 0)
+            {
+                throw new Win32Exception(
+                    error,
+                    "Could not enumerate the clipboard formats.");
+            }
+
+            return !hasUnicodeText && sawFormat;
+        }
+        finally
+        {
+            CloseClipboard();
+        }
+    }
 
     public string? GetText()
     {
@@ -165,6 +209,9 @@ public sealed class WindowsClipboard : IClipboard
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern nint GetClipboardData(uint format);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint EnumClipboardFormats(uint format);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern nint SetClipboardData(uint format, nint memory);
