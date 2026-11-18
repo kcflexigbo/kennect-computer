@@ -16,6 +16,7 @@ import {
   FindRequestSchema,
   KeyRequestSchema,
   MAX_CLICK_COUNT,
+  MAX_CLICK_TEXT_LENGTH,
   MAX_FIND_RESULTS,
   MAX_READ_TEXT_LENGTH,
   MAX_TYPE_TEXT_LENGTH,
@@ -772,6 +773,8 @@ const batchStepJsonSchema = {
       properties: {
         kind: { const: "click" },
         ...targetProperties,
+        text: { type: "string", minLength: 1, maxLength: MAX_CLICK_TEXT_LENGTH },
+        role: { type: "string", minLength: 1 },
         button: { type: "string", enum: ["left", "middle", "right"] },
         count: { type: "integer", minimum: 1, maximum: MAX_CLICK_COUNT },
         modifiers: clickModifiersJsonSchema,
@@ -844,18 +847,23 @@ function createClickDefinition(provider: HostProvider): ToolDefinition {
     name: "computer_click",
     title: "Computer click",
     description:
-      "Click a snapshot node or a pixel coordinate in the selected window. Pass a nodeId from the "
-      + "most recent snapshot, or x and y in image (default) or screen space; exactly one target form "
-      + "is required. button defaults to left and count to 1 (at most 10), and optional modifiers "
-      + "such as [\"Ctrl\", \"Shift\"] are held around the click. Optional expect predicates are checked "
-      + "against a fresh accessibility read immediately before input. The action is mutating: take a "
-      + "fresh snapshot before acting on node IDs again. Returns { window, action, method, "
-      + "needsObservation }.",
+      "Click a snapshot node, a live text selector, or a pixel coordinate in the selected window. "
+      + "Pass a nodeId from the most recent snapshot, x and y in image (default) or screen space, or "
+      + "text (a case-insensitive substring of an element's accessible name) with an optional exact "
+      + "role; exactly one target form is required and a text target must match exactly one element. "
+      + "A coordinate click snaps to the live element under the point when one is found, and the "
+      + "result reports it as snappedTo. button defaults to left and count to 1 (at most 10), and "
+      + "optional modifiers such as [\"Ctrl\", \"Shift\"] are held around the click. Optional expect "
+      + "predicates are checked against a fresh accessibility read immediately before input. The "
+      + "action is mutating: take a fresh snapshot before acting on node IDs again. Returns { window, "
+      + "action, method, snappedTo?, needsObservation }.",
     inputSchema: ClickRequestSchema,
     inputJsonSchema: {
       type: "object",
       properties: {
         ...targetProperties,
+        text: { type: "string", minLength: 1, maxLength: MAX_CLICK_TEXT_LENGTH },
+        role: { type: "string", minLength: 1 },
         button: { type: "string", enum: ["left", "middle", "right"] },
         count: { type: "integer", minimum: 1, maximum: MAX_CLICK_COUNT },
         modifiers: clickModifiersJsonSchema,

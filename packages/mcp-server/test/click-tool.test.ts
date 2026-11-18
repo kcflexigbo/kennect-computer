@@ -63,6 +63,27 @@ describe("clickTool", () => {
     );
   });
 
+  it("forwards a text target and role", async () => {
+    const request = vi.fn().mockResolvedValue(clickResult);
+
+    await clickTool(requester(request), { text: "Send", role: "button" });
+
+    expect(request).toHaveBeenCalledWith(
+      "action",
+      { kind: "click", text: "Send", role: "button" },
+      HOST_REQUEST_TIMEOUT_MS,
+    );
+  });
+
+  it("returns the snapped target from the host result", async () => {
+    const snapped = { ...clickResult, snappedTo: { role: "text", name: "Send" } };
+    const request = vi.fn().mockResolvedValue(snapped);
+
+    const result = await clickTool(requester(request), { x: 10, y: 20 });
+
+    expect(result).toEqual({ ok: true, data: snapped });
+  });
+
   it("maps host action failures to a non-retryable envelope", async () => {
     const request = vi.fn().mockRejectedValue(
       new HostError("STALE_SNAPSHOT", "The node is from an older snapshot."),
@@ -205,6 +226,45 @@ describe("computer_click MCP tool", () => {
       client.callTool({
         name: "computer_click",
         arguments: { nodeId: "n3:2", count: 11 },
+      }),
+    ).rejects.toMatchObject({ code: ErrorCode.InvalidParams });
+  });
+
+  it("accepts a text target with a role and forwards it", async () => {
+    const request = vi.fn().mockResolvedValue(clickResult);
+    const client = await connect(providerFor({ request }));
+
+    const result = await client.callTool({
+      name: "computer_click",
+      arguments: { text: "Don't lie to me", role: "text" },
+    });
+
+    expect(result.isError).toBe(false);
+    expect(request).toHaveBeenCalledWith(
+      "action",
+      { kind: "click", text: "Don't lie to me", role: "text" },
+      HOST_REQUEST_TIMEOUT_MS,
+    );
+  });
+
+  it("rejects a role without text as JSON-RPC -32602", async () => {
+    const client = await connect(providerFor({ request: vi.fn() }));
+
+    await expect(
+      client.callTool({
+        name: "computer_click",
+        arguments: { role: "text" },
+      }),
+    ).rejects.toMatchObject({ code: ErrorCode.InvalidParams });
+  });
+
+  it("rejects text combined with coordinates as JSON-RPC -32602", async () => {
+    const client = await connect(providerFor({ request: vi.fn() }));
+
+    await expect(
+      client.callTool({
+        name: "computer_click",
+        arguments: { text: "Send", x: 1, y: 1 },
       }),
     ).rejects.toMatchObject({ code: ErrorCode.InvalidParams });
   });

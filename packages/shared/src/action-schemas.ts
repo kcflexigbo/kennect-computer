@@ -46,6 +46,7 @@ export const ActionStepKindSchema = z.enum(["click", "type", "key", "scroll", "w
  * deadline (a huge keys text).
  */
 export const MAX_CLICK_COUNT = 10;
+export const MAX_CLICK_TEXT_LENGTH = 1000;
 export const MAX_TYPE_TEXT_LENGTH = 100_000;
 export const MAX_WAIT_TIMEOUT_MS = 60_000;
 export const MAX_FIND_RESULTS = 500;
@@ -69,21 +70,31 @@ interface TargetFields {
   nodeId?: string;
   x?: number;
   y?: number;
+  text?: string;
+  role?: string;
 }
 
 function hasSelector(value: SelectorFields): boolean {
   return value.role !== undefined || value.name !== undefined || value.identifier !== undefined;
 }
 
-/** Click and scroll target exactly one of a node ID or an (x, y) pair. */
+/**
+ * Click and scroll target exactly one of a node ID, an (x, y) pair, or (for a
+ * click) text with an optional role.
+ */
 function hasSingleTarget(value: TargetFields): boolean {
   const hasNode = value.nodeId !== undefined;
   const hasX = value.x !== undefined;
   const hasY = value.y !== undefined;
-  return hasNode ? !hasX && !hasY : hasX && hasY;
+  const hasText = value.text !== undefined;
+  const forms = (hasNode ? 1 : 0) + (hasX && hasY ? 1 : 0) + (hasText ? 1 : 0);
+  if (hasX !== hasY || forms !== 1) {
+    return false;
+  }
+  return value.role === undefined || hasText;
 }
 
-const TARGET_MESSAGE = "provide exactly one of nodeId or x and y";
+const TARGET_MESSAGE = "provide exactly one of nodeId, x and y, or text";
 
 export const ExpectPredicateSchema = z
   .discriminatedUnion("kind", [
@@ -116,6 +127,8 @@ const clickRequestShape = {
   nodeId: nodeId.optional(),
   x: finiteNumber.optional(),
   y: finiteNumber.optional(),
+  text: z.string().min(1).max(MAX_CLICK_TEXT_LENGTH).optional(),
+  role: z.string().min(1).optional(),
   space: CoordinateSpaceSchema.optional(),
   button: MouseButtonSchema.optional(),
   count: z.number().int().positive().max(MAX_CLICK_COUNT).optional(),

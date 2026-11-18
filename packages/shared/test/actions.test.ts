@@ -52,6 +52,19 @@ describe("ClickRequestSchema", () => {
     expect(() => ClickRequestSchema.parse({ nodeId: "n1:2", x: 10, y: 20 })).toThrow();
   });
 
+  it("accepts a text target with an optional role", () => {
+    expect(ClickRequestSchema.parse({ text: "Don't lie to me" }).text).toBe("Don't lie to me");
+    expect(ClickRequestSchema.parse({ text: "Send", role: "button" }).role).toBe("button");
+  });
+
+  it("rejects mixed, role-only, empty, or oversized text targets", () => {
+    expect(() => ClickRequestSchema.parse({ text: "Send", nodeId: "n1:2" })).toThrow();
+    expect(() => ClickRequestSchema.parse({ text: "Send", x: 1, y: 2 })).toThrow();
+    expect(() => ClickRequestSchema.parse({ role: "button" })).toThrow();
+    expect(() => ClickRequestSchema.parse({ text: "" })).toThrow();
+    expect(() => ClickRequestSchema.parse({ text: "x".repeat(1001) })).toThrow();
+  });
+
   it("rejects unknown fields", () => {
     expect(() => ClickRequestSchema.parse({ nodeId: "n1:2", hwnd: 1234 })).toThrow();
   });
@@ -280,6 +293,21 @@ describe("result schemas", () => {
       needsObservation: true,
     });
     expect(parsed.needsObservation).toBe(true);
+    const snapped = ActionResultSchema.parse({
+      window: windowInfo,
+      action: "click",
+      method: "coordinates",
+      snappedTo: { role: "text", name: "Send" },
+      needsObservation: true,
+    });
+    expect(snapped.snappedTo?.name).toBe("Send");
+    expect(() => ActionResultSchema.parse({
+      window: windowInfo,
+      action: "click",
+      method: "coordinates",
+      snappedTo: { role: "text" },
+      needsObservation: true,
+    })).toThrow();
     expect(() => ActionResultSchema.parse({ window: windowInfo, action: "click", method: "invoke" })).toThrow();
     expect(() => ActionResultSchema.parse({ window: windowInfo, action: "click", method: "invoke", needsObservation: true, hwnd: 1 })).toThrow();
   });

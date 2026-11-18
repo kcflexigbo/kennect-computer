@@ -6,8 +6,8 @@ namespace KennectComputer.Host.Actions;
 /// The host-side form of a shared <c>ClickRequest</c> (R9). Task 13 parses the
 /// protocol JSON into this record; the defaults mirror the shared schema:
 /// image-space coordinates, the left button, and a single click. Exactly one
-/// of <see cref="NodeId"/> or (<see cref="X"/> and <see cref="Y"/>) must be
-/// supplied.
+/// of <see cref="NodeId"/>, (<see cref="X"/> and <see cref="Y"/>), or
+/// <see cref="Text"/> must be supplied.
 /// </summary>
 public sealed record ClickRequest
 {
@@ -19,6 +19,15 @@ public sealed record ClickRequest
 
     /// <summary>The physical or image-space Y, depending on <see cref="Space"/>.</summary>
     public double? Y { get; init; }
+
+    /// <summary>
+    /// Case-insensitive substring of a live element's accessible name. The
+    /// element is looked up at action time; exactly one match is required.
+    /// </summary>
+    public string? Text { get; init; }
+
+    /// <summary>Exact lower-case role matched together with <see cref="Text"/>.</summary>
+    public string? Role { get; init; }
 
     /// <summary>The space of <see cref="X"/> and <see cref="Y"/>; image by default.</summary>
     public CoordinateSpace Space { get; init; } = CoordinateSpace.Image;

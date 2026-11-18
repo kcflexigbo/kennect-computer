@@ -36,11 +36,18 @@ export type ExpectPredicate =
   | { kind: "node"; role?: string; name?: string; identifier?: string; focused?: boolean }
   | { kind: "text"; role?: string; name?: string; identifier?: string; contains: string };
 
-/** Click a node or a point; exactly one of `nodeId` or (`x` and `y`) is required. */
+/**
+ * Click a node, live text, or a point; exactly one of `nodeId`, (`x` and `y`),
+ * or `text` is required. `role` narrows a text target to one role.
+ */
 export interface ClickRequest {
   nodeId?: string;
   x?: number;
   y?: number;
+  /** Case-insensitive substring of a live element's accessible name. */
+  text?: string;
+  /** Exact role matched together with `text`. */
+  role?: string;
   space?: CoordinateSpace;
   button?: MouseButton;
   count?: number;

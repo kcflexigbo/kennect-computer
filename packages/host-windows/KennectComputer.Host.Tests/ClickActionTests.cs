@@ -323,6 +323,107 @@ public sealed class ClickActionTests
     }
 
     [Fact]
+    public async Task ATextSelectorClicksTheSingleMatchingElement()
+    {
+        var live = FakeUiaNode.From(Button()) with
+        {
+            SupportsInvoke = false,
+            SupportsToggle = false,
+            SupportsSelect = false,
+            SupportsExpand = false,
+        };
+        var resolver = new FakeUiaNodeResolver(live) { TextMatches = [live] };
+        var harness = Harness.Create(resolver);
+
+        var result = await harness.Action.ExecuteAsync(
+            new ClickRequest { Text = "Send" },
+            CancellationToken.None);
+
+        Assert.Equal("text", result.Method);
+        Assert.Equal("Send", resolver.LastText);
+        Assert.Null(resolver.LastRole);
+        Assert.Equal([(170, 86)], harness.Input.Moves);
+        Assert.Equal([(MouseButton.Left, 1)], harness.Input.Clicks);
+        Assert.Equal(1, harness.Foreground.SetForegroundCalls);
+    }
+
+    [Fact]
+    public async Task ATextSelectorUsesASemanticPatternWhenAvailable()
+    {
+        var live = FakeUiaNode.From(Button());
+        var harness = Harness.Create(new FakeUiaNodeResolver(live) { TextMatches = [live] });
+
+        var result = await harness.Action.ExecuteAsync(
+            new ClickRequest { Text = "Send" },
+            CancellationToken.None);
+
+        Assert.Equal("text", result.Method);
+        Assert.Equal(["TryInvoke"], live.Calls);
+        Assert.Empty(harness.Input.Calls);
+    }
+
+    [Fact]
+    public async Task ATextSelectorWithNoMatchIsStaleAndSendsNoInput()
+    {
+        var harness = Harness.Create(new FakeUiaNodeResolver(null));
+
+        var failure = await Assert.ThrowsAsync<ActionFailedException>(() =>
+            harness.Action.ExecuteAsync(
+                new ClickRequest { Text = "Missing" },
+                CancellationToken.None));
+
+        Assert.Equal(ErrorCode.StaleSnapshot, failure.Code);
+        Assert.Empty(harness.Input.Calls);
+        Assert.Equal(0, harness.Foreground.SetForegroundCalls);
+    }
+
+    [Fact]
+    public async Task AnAmbiguousTextSelectorIsInvalidAndSendsNoInput()
+    {
+        var first = FakeUiaNode.From(Button());
+        var second = FakeUiaNode.From(Button());
+        var harness = Harness.Create(
+            new FakeUiaNodeResolver(null) { TextMatches = [first, second] });
+
+        var failure = await Assert.ThrowsAsync<ActionFailedException>(() =>
+            harness.Action.ExecuteAsync(
+                new ClickRequest { Text = "Send" },
+                CancellationToken.None));
+
+        Assert.Equal(ErrorCode.InvalidRequest, failure.Code);
+        Assert.Empty(harness.Input.Calls);
+        Assert.Equal(0, harness.Foreground.SetForegroundCalls);
+    }
+
+    [Fact]
+    public async Task ATextSelectorPassesTheRoleToTheResolver()
+    {
+        var live = FakeUiaNode.From(Button());
+        var resolver = new FakeUiaNodeResolver(live) { TextMatches = [live] };
+        var harness = Harness.Create(resolver);
+
+        await harness.Action.ExecuteAsync(
+            new ClickRequest { Text = "Send", Role = "Button" },
+            CancellationToken.None);
+
+        Assert.Equal("button", resolver.LastRole);
+    }
+
+    [Fact]
+    public async Task TextAndCoordinatesIsInvalid()
+    {
+        var harness = Harness.Create(new FakeUiaNodeResolver(null));
+
+        var failure = await Assert.ThrowsAsync<ActionFailedException>(() =>
+            harness.Action.ExecuteAsync(
+                new ClickRequest { Text = "Send", X = 1, Y = 2 },
+                CancellationToken.None));
+
+        Assert.Equal(ErrorCode.InvalidRequest, failure.Code);
+        Assert.Empty(harness.Input.Calls);
+    }
+
+    [Fact]
     public async Task ImageSpaceClickWithoutASnapshotImageIsInvalid()
     {
         var harness = Harness.Create(new FakeUiaNodeResolver(null));

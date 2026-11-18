@@ -34,4 +34,15 @@ public interface IUiaNodeResolver
     /// </summary>
     SnapTarget? SnapToPoint(nint hwnd, int x, int y, CancellationToken cancellationToken)
         => null;
+
+    /// <summary>
+    /// Finds live elements whose accessible name contains the text and whose
+    /// role matches exactly when a role is given. The caller requires exactly
+    /// one result so an ambiguous selector never clicks a guessed target.
+    /// </summary>
+    IReadOnlyList<IUiaNode> FindByText(
+        nint hwnd,
+        string text,
+        string? role,
+        CancellationToken cancellationToken) => [];
 }

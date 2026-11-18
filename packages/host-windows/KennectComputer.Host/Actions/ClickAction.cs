@@ -9,20 +9,24 @@ using KennectComputer.Host.Windows;
 namespace KennectComputer.Host.Actions;
 
 /// <summary>
-/// Clicks a snapshot node or a point in the selected window (DESIGN §6.1–§6.3).
+/// Clicks a snapshot node, a live text selector, or a point in the selected
+/// window (DESIGN §6.1–§6.3).
 ///
 /// The selected window is re-resolved first, so a dead or recycled window is
 /// never acted on. Expectations run against a fresh accessibility read before
 /// any focus change or input. A node target must belong to the stored snapshot
-/// generation and still match the live element's fingerprint; the action then
-/// prefers a semantic UIA pattern and falls back to clicking the live bounds
-/// center. A non-left button, a count other than one, or any modifier makes
-/// the click a mouse gesture, so semantic patterns are skipped and the
-/// bounds-center (or coordinate) path runs instead. Coordinate targets map
-/// through the snapshot's scale and source bounds (image space) or are already
-/// physical (screen space). Modifiers are held around the clicks and released
-/// in reverse on every path, and each click checks the stop token. Every
-/// failure sends no input and is raised as an <see cref="ActionFailedException"/>.
+/// generation and still match the live element's fingerprint; a text target
+/// must match exactly one live element's accessible name (optionally by role);
+/// the action then prefers a semantic UIA pattern and falls back to clicking
+/// the live bounds center. A non-left button, a count other than one, or any
+/// modifier makes the click a mouse gesture, so semantic patterns are skipped
+/// and the bounds-center (or coordinate) path runs instead. Coordinate targets
+/// map through the snapshot's scale and source bounds (image space) or are
+/// already physical (screen space), and snap to the live element under the
+/// point when one is available. Modifiers are held around the clicks and
+/// released in reverse on every path, and each click checks the stop token.
+/// Every failure sends no input and is raised as an
+/// <see cref="ActionFailedException"/>.
 /// </summary>
 public sealed class ClickAction
 {
@@ -55,15 +59,21 @@ public sealed class ClickAction
         var hasNode = !string.IsNullOrWhiteSpace(request.NodeId);
         var hasX = request.X is not null;
         var hasY = request.Y is not null;
+        var hasText = !string.IsNullOrWhiteSpace(request.Text);
+        var hasRole = !string.IsNullOrWhiteSpace(request.Role);
+        var hasPoint = hasX && hasY;
 
-        // The shared schema allows exactly one target: a node ID, or both
-        // coordinates. A mixed or partial target is rejected before anything
-        // is evaluated so a malformed request can never reach input.
-        if (hasNode ? hasX || hasY : !(hasX && hasY))
+        // The shared schema allows exactly one target: a node ID, both
+        // coordinates, or text. A mixed, partial, or role-only target is
+        // rejected before anything is evaluated so a malformed request can
+        // never reach input.
+        if (hasX != hasY
+            || ((hasNode ? 1 : 0) + (hasPoint ? 1 : 0) + (hasText ? 1 : 0) != 1)
+            || (hasRole && !hasText))
         {
             throw Failure(
                 ErrorCode.InvalidRequest,
-                "Provide exactly one of nodeId or x and y.");
+                "Provide exactly one of nodeId, x and y, or text with an optional role.");
         }
 
         if (request.Count < 1)
@@ -80,11 +90,20 @@ public sealed class ClickAction
             .CheckExpectationsAsync(resolved, request.Expect, cancellationToken)
             .ConfigureAwait(false);
 
-        return hasNode
-            ? await ClickNodeAsync(resolved, request, modifiers, cancellationToken)
-                .ConfigureAwait(false)
-            : await ClickPointAsync(resolved, request, modifiers, cancellationToken)
+        if (hasNode)
+        {
+            return await ClickNodeAsync(resolved, request, modifiers, cancellationToken)
                 .ConfigureAwait(false);
+        }
+
+        if (hasText)
+        {
+            return await ClickTextAsync(resolved, request, modifiers, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return await ClickPointAsync(resolved, request, modifiers, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private async Task<ActionResult> ClickNodeAsync(
@@ -136,6 +155,64 @@ public sealed class ClickAction
         SendClick(request, modifiers, cancellationToken);
 
         return Succeeded(window.Info, "bounds");
+    }
+
+    /// <summary>
+    /// Clicks the single live element whose accessible name matches the text
+    /// and optional role. Exactly one match is required: none is a stale
+    /// assumption about the UI, and several are an ambiguous request that must
+    /// not be guessed. The element is resolved before focus, then uses the
+    /// same pattern-or-bounds decision as a node target.
+    /// </summary>
+    private async Task<ActionResult> ClickTextAsync(
+        ResolvedWindow window,
+        ClickRequest request,
+        IReadOnlyList<ushort> modifiers,
+        CancellationToken cancellationToken)
+    {
+        var text = request.Text!.Trim();
+        var role = string.IsNullOrWhiteSpace(request.Role)
+            ? null
+            : request.Role.Trim().ToLowerInvariant();
+
+        var matches = _resolver.FindByText(window.Hwnd, text, role, cancellationToken);
+        if (matches.Count == 0)
+        {
+            throw Failure(
+                ErrorCode.StaleSnapshot,
+                $"No element matches the click text \"{text}\"; "
+                + "take a fresh snapshot or use find.");
+        }
+
+        if (matches.Count > 1)
+        {
+            throw Failure(
+                ErrorCode.InvalidRequest,
+                $"{matches.Count} elements match the click text \"{text}\"; "
+                + "use a more specific text or role.");
+        }
+
+        var live = matches[0];
+
+        await _preflight
+            .FocusAsync(
+                window.Hwnd,
+                "Windows refused to bring the window to the foreground; no input was sent.",
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (RequiresMouseGesture(request) is false
+            && TrySemanticAction(live, cancellationToken))
+        {
+            return Succeeded(window.Info, "text");
+        }
+
+        var center = CoordinateTarget.ResolveNodeCenter(live, window.Info, "click");
+        cancellationToken.ThrowIfCancellationRequested();
+        _input.MoveTo(center.X, center.Y);
+        SendClick(request, modifiers, cancellationToken);
+
+        return Succeeded(window.Info, "text");
     }
 
     private async Task<ActionResult> ClickPointAsync(

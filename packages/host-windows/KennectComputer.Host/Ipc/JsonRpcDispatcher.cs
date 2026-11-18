@@ -33,6 +33,7 @@ public sealed class JsonRpcDispatcher
     // events, so both carry the shared schema's documented maxima. A hidden
     // client that bypasses the schema must not reach an unbounded allocation.
     private const int MaxClickCount = 10;
+    private const int MaxSelectorTextLength = 1000;
     private const int MaxTypeTextLength = 100_000;
 
     private readonly TokenStore _tokens;
@@ -1057,6 +1058,8 @@ public sealed class JsonRpcDispatcher
             "nodeId",
             "x",
             "y",
+            "text",
+            "role",
             "space",
             "button",
             "count",
@@ -1066,13 +1069,22 @@ public sealed class JsonRpcDispatcher
         var nodeId = ReadOptionalString(parameters, "nodeId");
         var x = ReadOptionalFiniteDouble(parameters, "x");
         var y = ReadOptionalFiniteDouble(parameters, "y");
-        EnsureSingleTarget(nodeId, x, y);
+        var text = ReadOptionalString(parameters, "text");
+        var role = ReadOptionalString(parameters, "role");
+        if (text is not null && text.Length > MaxSelectorTextLength)
+        {
+            throw Invalid($"text must be at most {MaxSelectorTextLength} characters.");
+        }
+
+        EnsureSingleClickTarget(nodeId, x, y, text, role);
 
         return new ClickRequest
         {
             NodeId = nodeId,
             X = x,
             Y = y,
+            Text = text,
+            Role = role,
             Space = ReadSpace(parameters),
             Button = ReadButton(parameters),
             Count = ReadOptionalPositiveInt(parameters, "count", MaxClickCount) ?? 1,
@@ -1182,8 +1194,32 @@ public sealed class JsonRpcDispatcher
     }
 
     /// <summary>
-    /// Click and scroll target exactly one of a node ID or an (x, y) pair,
-    /// mirroring the shared schema (R9).
+    /// A click targets exactly one of a node ID, an (x, y) pair, or text with
+    /// an optional role, mirroring the shared schema.
+    /// </summary>
+    private static void EnsureSingleClickTarget(
+        string? nodeId,
+        double? x,
+        double? y,
+        string? text,
+        string? role)
+    {
+        var hasNode = nodeId is not null;
+        var hasX = x is not null;
+        var hasY = y is not null;
+        var hasText = !string.IsNullOrWhiteSpace(text);
+        var forms = (hasNode ? 1 : 0) + ((hasX && hasY) ? 1 : 0) + (hasText ? 1 : 0);
+
+        if (hasX != hasY || forms != 1 || (role is not null && !hasText))
+        {
+            throw Invalid(
+                "Provide exactly one of nodeId, x and y, or text with an optional role.");
+        }
+    }
+
+    /// <summary>
+    /// Scroll targets exactly one of a node ID or an (x, y) pair, mirroring
+    /// the shared schema (R9).
     /// </summary>
     private static void EnsureSingleTarget(string? nodeId, double? x, double? y)
     {
