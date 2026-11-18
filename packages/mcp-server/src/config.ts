@@ -13,6 +13,23 @@ export const STATUS_TIMEOUT_MS = 8_000;
 export const HELLO_TIMEOUT_MS = 5_000;
 export const CONNECT_TIMEOUT_MS = 3_000;
 
+/**
+ * Wait budgets mirror the host's `WaitAction`: a request without `timeoutMs`
+ * waits up to 10,000 ms and the host caps an explicit deadline at 60,000 ms.
+ * Tools that wait (directly or inside a batch) must outlive the host's own
+ * deadline, so they derive a longer host-request deadline from the request.
+ */
+export const DEFAULT_WAIT_TIMEOUT_MS = 10_000;
+export const MAX_WAIT_TIMEOUT_MS = 60_000;
+
+/** Margin over a derived deadline for framing, dispatch, and the final write. */
+export const HOST_REQUEST_GRACE_MS = 2_000;
+
+/** The host's effective wait deadline: its default, capped at its maximum. */
+export function effectiveWaitTimeoutMs(timeoutMs: number | undefined): number {
+  return Math.min(timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS, MAX_WAIT_TIMEOUT_MS);
+}
+
 /** How long HostManager waits for `session.json`/`session.token` after a spawn. */
 export const SPAWN_WAIT_MS = 2_000;
 

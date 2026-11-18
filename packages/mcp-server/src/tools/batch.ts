@@ -1,7 +1,11 @@
 import type { BatchRequest, BatchResult } from "@kennect/shared/actions";
 import { BatchResultSchema } from "@kennect/shared/action-schemas";
 
-import { HOST_REQUEST_TIMEOUT_MS } from "../config.js";
+import {
+  effectiveWaitTimeoutMs,
+  HOST_REQUEST_GRACE_MS,
+  HOST_REQUEST_TIMEOUT_MS,
+} from "../config.js";
 import { failure, failureFromError, ok, type ToolResult } from "../tool-result.js";
 import type { HostRequester } from "./status.js";
 
@@ -24,7 +28,7 @@ export async function batchTool(
     const payload = await host.request<unknown>(
       "action.batch",
       args,
-      HOST_REQUEST_TIMEOUT_MS,
+      batchRequestTimeoutMs(args),
     );
     const parsed = BatchResultSchema.safeParse(payload);
 
@@ -40,6 +44,30 @@ export async function batchTool(
   } catch (error) {
     return failureFromError(error);
   }
+}
+
+/**
+ * The host-request deadline for a batch: every step gets the budget of a
+ * standalone host request, each wait step adds its own (capped) deadline, and
+ * one grace margin covers framing and the final write. The host runs the steps
+ * serially in one request, so the sum bounds the response time; a shorter
+ * client deadline would reject the pending request while the host kept
+ * mutating the desktop. The schema caps a batch at 50 steps, which bounds this
+ * deadline.
+ */
+function batchRequestTimeoutMs(args: BatchArgs): number {
+  const waitBudgetMs = args.steps.reduce(
+    (total, step) =>
+      step.kind === "wait"
+        ? total + effectiveWaitTimeoutMs(step.timeoutMs)
+        : total,
+    0,
+  );
+
+  return Math.max(
+    HOST_REQUEST_TIMEOUT_MS,
+    HOST_REQUEST_TIMEOUT_MS * args.steps.length + waitBudgetMs + HOST_REQUEST_GRACE_MS,
+  );
 }
 
 /**

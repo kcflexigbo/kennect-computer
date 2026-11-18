@@ -1,7 +1,11 @@
 import type { WaitRequest, WaitResult } from "@kennect/shared/actions";
 import { WaitResultSchema } from "@kennect/shared/action-schemas";
 
-import { HOST_REQUEST_TIMEOUT_MS } from "../config.js";
+import {
+  effectiveWaitTimeoutMs,
+  HOST_REQUEST_GRACE_MS,
+  HOST_REQUEST_TIMEOUT_MS,
+} from "../config.js";
 import { failure, failureFromError, ok, type ToolResult } from "../tool-result.js";
 import type { HostRequester } from "./status.js";
 
@@ -21,7 +25,7 @@ export async function waitTool(
     const payload = await host.request<unknown>(
       "wait",
       args,
-      HOST_REQUEST_TIMEOUT_MS,
+      waitRequestTimeoutMs(args),
     );
     const parsed = WaitResultSchema.safeParse(payload);
 
@@ -37,4 +41,17 @@ export async function waitTool(
   } catch (error) {
     return failureFromError(error);
   }
+}
+
+/**
+ * The host-request deadline for a wait: the host's own deadline plus a margin,
+ * never below a normal request. Without this, the transport's timer would fire
+ * at (or before) the host's deadline and mask the host's condition-naming
+ * `ACTION_TIMEOUT` as a transport timeout.
+ */
+function waitRequestTimeoutMs(args: WaitArgs): number {
+  return Math.max(
+    HOST_REQUEST_TIMEOUT_MS,
+    effectiveWaitTimeoutMs(args.timeoutMs) + HOST_REQUEST_GRACE_MS,
+  );
 }

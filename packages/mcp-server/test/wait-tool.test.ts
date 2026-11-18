@@ -48,6 +48,7 @@ describe("waitTool", () => {
 
     const result = await waitTool(requester(request), args);
 
+    // A short wait keeps the normal request floor: max(10,000, 500 + 2,000).
     expect(request).toHaveBeenCalledWith("wait", args, HOST_REQUEST_TIMEOUT_MS);
     expect(result).toEqual({ ok: true, data: textWaitResult });
   });
@@ -59,12 +60,27 @@ describe("waitTool", () => {
       condition: { kind: "window", process: "notepad" },
     });
 
+    // The host defaults to a 10,000 ms wait; the request deadline adds a
+    // 2,000 ms margin so the host's own deadline fires first.
     expect(request).toHaveBeenCalledWith(
       "wait",
       { condition: { kind: "window", process: "notepad" } },
-      HOST_REQUEST_TIMEOUT_MS,
+      12_000,
     );
     expect(result).toEqual({ ok: true, data: windowWaitResult });
+  });
+
+  it("extends the request deadline beyond a long wait", async () => {
+    const request = vi.fn().mockResolvedValue(windowWaitResult);
+    const args = {
+      condition: { kind: "window" as const, process: "notepad" },
+      timeoutMs: 60_000,
+    };
+
+    await waitTool(requester(request), args);
+
+    // 60,000 ms host deadline + 2,000 ms margin, strictly beyond the wait.
+    expect(request).toHaveBeenCalledWith("wait", args, 62_000);
   });
 
   it("maps a wait timeout to a non-retryable envelope", async () => {
@@ -165,6 +181,26 @@ describe("computer_wait MCP tool", () => {
     expect(result.content).toEqual([
       { type: "text", text: JSON.stringify(expected) },
     ]);
+  });
+
+  it("extends the request deadline beyond a long advertised wait", async () => {
+    const request = vi.fn().mockResolvedValue(windowWaitResult);
+    const client = await connect(providerFor({ request }));
+
+    const result = await client.callTool({
+      name: "computer_wait",
+      arguments: {
+        condition: { kind: "window", process: "notepad" },
+        timeoutMs: 60_000,
+      },
+    });
+
+    expect(result.isError).toBe(false);
+    expect(request).toHaveBeenCalledWith(
+      "wait",
+      { condition: { kind: "window", process: "notepad" }, timeoutMs: 60_000 },
+      62_000,
+    );
   });
 
   it("forwards an inverted text condition", async () => {

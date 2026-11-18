@@ -878,9 +878,10 @@ function createWaitDefinition(provider: HostProvider): ToolDefinition {
       "Wait until a window, a node, or a node's text appears, or disappears when present is false. "
       + "The host polls on a bounded interval with a deadline: timeoutMs defaults to 10,000 ms "
       + "(1..60,000) and pollMs to 100 ms. Reaching the deadline returns ACTION_TIMEOUT naming the "
-      + "condition. Returns { window?, condition, elapsedMs }; window is set only when a window "
-      + "condition matched. This tool is read-only, sends no input, and may run concurrently with "
-      + "other read-only calls.",
+      + "condition. The host request deadline extends past timeoutMs, so the host's own deadline "
+      + "decides the wait. Returns { window?, condition, elapsedMs }; window is set only when a "
+      + "window condition matched. This tool is read-only, sends no input, and may run concurrently "
+      + "with other read-only calls.",
     inputSchema: WaitRequestSchema,
     inputJsonSchema: {
       type: "object",
@@ -942,11 +943,12 @@ function createBatchDefinition(provider: HostProvider): ToolDefinition {
     title: "Computer batch",
     description:
       "Run an ordered list of up to 50 action steps serially in one call: click, type, key, scroll, "
-      + "wait, and readText. The first failing step stops the batch. A successful call returns "
-      + "{ steps, snapshotBefore?, snapshotAfter?, warning? }; optional before/after snapshots are "
-      + "accessibility-only and never include an image. A failed step returns an error envelope "
-      + "carrying that step's code and message, the failed index, and the partial step results. "
-      + "The action is mutating: take a fresh snapshot before acting on node IDs again.",
+      + "wait, and readText. The first failing step stops the batch. The host request deadline grows "
+      + "with the step count and any wait deadlines, so a long wait step is not cut off. A successful "
+      + "call returns { steps, snapshotBefore?, snapshotAfter?, warning? }; optional before/after "
+      + "snapshots are accessibility-only and never include an image. A failed step returns an error "
+      + "envelope carrying that step's code and message, the failed index, and the partial step "
+      + "results. The action is mutating: take a fresh snapshot before acting on node IDs again.",
     inputSchema: BatchRequestSchema,
     inputJsonSchema: {
       type: "object",

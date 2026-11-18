@@ -15,7 +15,6 @@ import type {
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AuditLog } from "../src/audit/log.js";
-import { HOST_REQUEST_TIMEOUT_MS } from "../src/config.js";
 import { HostError } from "../src/errors.js";
 import { createMcpServer } from "../src/index.js";
 import { batchTool } from "../src/tools/batch.js";
@@ -85,6 +84,12 @@ const batchArgs: BatchRequest = {
   snapshotAfter: true,
 };
 
+/**
+ * `batchArgs` has two non-wait steps: each gets the 10,000 ms standalone host
+ * request budget, plus one 2,000 ms grace margin.
+ */
+const BATCH_ARGS_DEADLINE_MS = 22_000;
+
 const temporaryDirectories: string[] = [];
 
 function temporaryDirectory(): string {
@@ -116,9 +121,44 @@ describe("batchTool", () => {
     expect(request).toHaveBeenCalledWith(
       "action.batch",
       batchArgs,
-      HOST_REQUEST_TIMEOUT_MS,
+      BATCH_ARGS_DEADLINE_MS,
     );
     expect(result).toEqual({ ok: true, data: successBatch });
+  });
+
+  it("extends the request deadline for a batch containing a long wait", async () => {
+    const request = vi.fn().mockResolvedValue(successBatch);
+    const args: BatchRequest = {
+      steps: [
+        {
+          kind: "wait",
+          condition: { kind: "window", process: "notepad" },
+          timeoutMs: 60_000,
+        },
+        { kind: "key", keys: "Enter" },
+      ],
+    };
+
+    await batchTool(requester(request), args);
+
+    // Two steps at the 10,000 ms standalone budget, the 60,000 ms wait
+    // deadline, and the 2,000 ms grace.
+    expect(request).toHaveBeenCalledWith("action.batch", args, 82_000);
+  });
+
+  it("counts a wait step's default deadline in the request deadline", async () => {
+    const request = vi.fn().mockResolvedValue(successBatch);
+    const args: BatchRequest = {
+      steps: [
+        { kind: "wait", condition: { kind: "window", process: "notepad" } },
+        { kind: "key", keys: "Enter" },
+      ],
+    };
+
+    await batchTool(requester(request), args);
+
+    // Two steps at 10,000 ms plus the host's 10,000 ms default wait and grace.
+    expect(request).toHaveBeenCalledWith("action.batch", args, 32_000);
   });
 
   it("returns a failed step as an ok:false envelope with the partial step results", async () => {
@@ -241,7 +281,7 @@ describe("computer_batch MCP tool", () => {
     expect(request).toHaveBeenCalledWith(
       "action.batch",
       batchArgs,
-      HOST_REQUEST_TIMEOUT_MS,
+      BATCH_ARGS_DEADLINE_MS,
     );
     expect(result.isError).toBe(false);
     expect(result.structuredContent).toEqual(expected);
