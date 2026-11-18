@@ -42,7 +42,7 @@ describe("clickTool", () => {
     expect(result).toEqual({ ok: true, data: clickResult });
   });
 
-  it("forwards coordinates, space, button, count, and expect predicates", async () => {
+  it("forwards coordinates, space, button, count, modifiers, and expect predicates", async () => {
     const request = vi.fn().mockResolvedValue(clickResult);
     const args = {
       x: 120.5,
@@ -50,6 +50,7 @@ describe("clickTool", () => {
       space: "screen" as const,
       button: "right" as const,
       count: 2,
+      modifiers: ["Ctrl", "Shift"],
       expect: [{ kind: "foreground" as const }],
     };
 
@@ -178,6 +179,23 @@ describe("computer_click MCP tool", () => {
         arguments: { nodeId: "n3:2", keys: "Enter" },
       }),
     ).rejects.toMatchObject({ code: ErrorCode.InvalidParams });
+  });
+
+  it("accepts modifiers through the MCP schema and forwards them", async () => {
+    const request = vi.fn().mockResolvedValue(clickResult);
+    const client = await connect(providerFor({ request }));
+
+    const result = await client.callTool({
+      name: "computer_click",
+      arguments: { nodeId: "n3:2", modifiers: ["Ctrl"] },
+    });
+
+    expect(result.isError).toBe(false);
+    expect(request).toHaveBeenCalledWith(
+      "action",
+      { kind: "click", nodeId: "n3:2", modifiers: ["Ctrl"] },
+      HOST_REQUEST_TIMEOUT_MS,
+    );
   });
 
   it("rejects a count above ten as JSON-RPC -32602", async () => {

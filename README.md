@@ -106,7 +106,7 @@ abort work already in flight and instead cancels the next operation. The tray
 
 | Tool | What it does |
 |---|---|
-| `computer_click` | Click a snapshot node (preferred) or `x`/`y` coordinates; `button` defaults to left and `count` to 1 |
+| `computer_click` | Click a snapshot node (preferred) or `x`/`y` coordinates; `button` defaults to left, `count` to 1 (at most 10), and `modifiers` such as `["Ctrl","Shift"]` are held around the click |
 | `computer_type` | Type text; `method` is `paste` (default), `value`, or `keys`; optionally target a node |
 | `computer_key` | Press a key or chord such as `Enter`, `Tab`, `Ctrl+A`, or `Alt+F4` |
 | `computer_scroll` | Turn the wheel at a node or coordinate; `direction` and `amount` (1..100 notches) |
@@ -120,6 +120,12 @@ activates and verifies it, retries once, and otherwise returns `FOCUS_REFUSED`
 with no input sent. A node ID is valid only for the snapshot generation that
 produced it: acting on an older ID returns `STALE_SNAPSHOT`, and the live
 element is also re-checked (role, name, identifier, and bounds) before input.
+A node click uses a semantic activation pattern only for a plain left single
+click with no modifiers; a right/middle button, `count > 1`, or any modifier
+runs the bounds-center mouse path instead, pressing modifiers before the
+clicks and releasing them in reverse. A node whose live bounds are empty or
+whose center is outside the window returns `STALE_SNAPSHOT` rather than
+clicking over another window.
 
 `computer_type` methods: `paste` saves the clipboard, sets the text, sends
 `Ctrl+V`, and keeps the typed text on the clipboard until the target has

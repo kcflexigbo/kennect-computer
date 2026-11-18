@@ -1060,6 +1060,7 @@ public sealed class JsonRpcDispatcher
             "space",
             "button",
             "count",
+            "modifiers",
             "expect");
 
         var nodeId = ReadOptionalString(parameters, "nodeId");
@@ -1075,8 +1076,48 @@ public sealed class JsonRpcDispatcher
             Space = ReadSpace(parameters),
             Button = ReadButton(parameters),
             Count = ReadOptionalPositiveInt(parameters, "count", MaxClickCount) ?? 1,
+            Modifiers = ReadOptionalStringArray(parameters, "modifiers", maxItems: 4),
             Expect = ParseExpect(parameters),
         };
+    }
+
+    /// <summary>
+    /// Reads an optional array of non-empty strings. A malformed array is
+    /// rejected here so it can never reach an action.
+    /// </summary>
+    private static IReadOnlyList<string> ReadOptionalStringArray(
+        JsonElement parameters,
+        string name,
+        int maxItems)
+    {
+        if (!parameters.TryGetProperty(name, out var element))
+        {
+            return [];
+        }
+
+        if (element.ValueKind != JsonValueKind.Array)
+        {
+            throw Invalid($"{name} must be an array of strings.");
+        }
+
+        var values = new List<string>();
+        foreach (var item in element.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.String
+                || string.IsNullOrEmpty(item.GetString()))
+            {
+                throw Invalid($"{name} must be an array of non-empty strings.");
+            }
+
+            values.Add(item.GetString()!);
+        }
+
+        if (values.Count > maxItems)
+        {
+            throw Invalid($"{name} must have at most {maxItems} entries.");
+        }
+
+        return values;
     }
 
     private static TypeRequest ParseTypeRequest(JsonElement parameters)

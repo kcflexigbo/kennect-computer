@@ -69,6 +69,18 @@ public static class KeyParser
         };
 
     /// <summary>
+    /// Parses a single modifier name (Ctrl/Control, Shift, Alt, Win/Windows)
+    /// into its virtual key. Click modifiers are names, not chords.
+    /// </summary>
+    public static bool TryParseModifier(string? value, out ushort virtualKey)
+    {
+        virtualKey = 0;
+
+        return !string.IsNullOrWhiteSpace(value)
+            && ModifierKeys.TryGetValue(value.Trim(), out virtualKey);
+    }
+
+    /// <summary>
     /// Parses <paramref name="value"/> into a chord. Returns false for an empty
     /// or whitespace value, a bare modifier, an empty token, or an unknown key
     /// name; <paramref name="chord"/> is then the default value.

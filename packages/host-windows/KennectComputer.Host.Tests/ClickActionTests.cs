@@ -76,13 +76,122 @@ public sealed class ClickActionTests
             CancellationToken.None);
 
         Assert.Equal("bounds", result.Method);
-        Assert.Equal(
-            ["TryInvoke", "TryToggle", "TrySelect", "TryExpand"],
-            live.Calls);
+
+        // A non-default button or count is a mouse gesture, not a semantic
+        // activation, so no pattern is attempted.
+        Assert.Empty(live.Calls);
 
         // The captured button is 120x32 at (110, 70): its center is (170, 86).
         Assert.Equal([(170, 86)], harness.Input.Moves);
-        Assert.Equal([(MouseButton.Right, 2)], harness.Input.Clicks);
+        Assert.Equal([(MouseButton.Right, 1), (MouseButton.Right, 1)], harness.Input.Clicks);
+    }
+
+    [Fact]
+    public async Task ARightButtonNodeClickSkipsSemanticPatterns()
+    {
+        var target = Button();
+        var live = FakeUiaNode.From(target);
+        var harness = Harness.Create(new FakeUiaNodeResolver(live));
+        harness.SaveNode("n1:1", target);
+
+        var result = await harness.Action.ExecuteAsync(
+            new ClickRequest { NodeId = "n1:1", Button = MouseButton.Right },
+            CancellationToken.None);
+
+        Assert.Equal("bounds", result.Method);
+        Assert.Empty(live.Calls);
+        Assert.Equal([(MouseButton.Right, 1)], harness.Input.Clicks);
+    }
+
+    [Fact]
+    public async Task ACountGreaterThanOneSkipsSemanticPatterns()
+    {
+        var target = Button();
+        var live = FakeUiaNode.From(target);
+        var harness = Harness.Create(new FakeUiaNodeResolver(live));
+        harness.SaveNode("n1:1", target);
+
+        var result = await harness.Action.ExecuteAsync(
+            new ClickRequest { NodeId = "n1:1", Count = 3 },
+            CancellationToken.None);
+
+        Assert.Equal("bounds", result.Method);
+        Assert.Empty(live.Calls);
+        Assert.Equal(
+            [(MouseButton.Left, 1), (MouseButton.Left, 1), (MouseButton.Left, 1)],
+            harness.Input.Clicks);
+    }
+
+    [Fact]
+    public async Task ModifierClickPressesBeforeAndReleasesInReverseAfterTheClick()
+    {
+        var target = Button();
+        var live = FakeUiaNode.From(target);
+        var harness = Harness.Create(new FakeUiaNodeResolver(live));
+        harness.SaveNode("n1:1", target);
+
+        var result = await harness.Action.ExecuteAsync(
+            new ClickRequest
+            {
+                NodeId = "n1:1",
+                Modifiers = ["Ctrl", "Shift"],
+            },
+            CancellationToken.None);
+
+        Assert.Equal("bounds", result.Method);
+        Assert.Empty(live.Calls);
+        Assert.Equal(
+            [
+                "MoveTo:170,86",
+                "KeyDown:17",
+                "KeyDown:16",
+                "Click:Left:1",
+                "KeyUp:16",
+                "KeyUp:17",
+            ],
+            harness.Input.Calls);
+    }
+
+    [Fact]
+    public async Task AFailedModifiedClickStillReleasesEveryModifier()
+    {
+        var target = Button();
+        var live = FakeUiaNode.From(target);
+        var harness = Harness.Create(new FakeUiaNodeResolver(live));
+        harness.SaveNode("n1:1", target);
+        harness.Input.BeforeClick = () => throw new InvalidOperationException("click failed");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            harness.Action.ExecuteAsync(
+                new ClickRequest
+                {
+                    NodeId = "n1:1",
+                    Modifiers = ["Ctrl", "Shift"],
+                },
+                CancellationToken.None));
+
+        Assert.Equal(
+            ["MoveTo:170,86", "KeyDown:17", "KeyDown:16", "KeyUp:16", "KeyUp:17"],
+            harness.Input.Calls);
+    }
+
+    [Fact]
+    public async Task AnUnknownModifierIsInvalidAndSendsNoInput()
+    {
+        var target = Button();
+        var live = FakeUiaNode.From(target);
+        var harness = Harness.Create(new FakeUiaNodeResolver(live));
+        harness.SaveNode("n1:1", target);
+
+        var failure = await Assert.ThrowsAsync<ActionFailedException>(() =>
+            harness.Action.ExecuteAsync(
+                new ClickRequest { NodeId = "n1:1", Modifiers = ["Hyper"] },
+                CancellationToken.None));
+
+        Assert.Equal(ErrorCode.InvalidRequest, failure.Code);
+        Assert.Empty(harness.Input.Calls);
+        Assert.Equal(0, harness.Foreground.SetForegroundCalls);
+        Assert.Empty(live.Calls);
     }
 
     [Fact]
@@ -544,6 +653,9 @@ internal sealed class FakeInputSender : IInputSender
     /// <summary>Runs before a key-up is recorded; tests inject failures here.</summary>
     public Action? BeforeKeyUp { get; set; }
 
+    /// <summary>Runs before a click is recorded; tests inject failures or observe order.</summary>
+    public Action? BeforeClick { get; set; }
+
     /// <summary>Runs before typed text is recorded; tests inject failures or observe order.</summary>
     public Action? BeforeUnicodeText { get; set; }
 
@@ -555,6 +667,7 @@ internal sealed class FakeInputSender : IInputSender
 
     public void Click(MouseButton button, int count)
     {
+        BeforeClick?.Invoke();
         Calls.Add($"Click:{button}:{count}");
         Clicks.Add((button, count));
     }

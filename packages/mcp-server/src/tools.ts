@@ -719,6 +719,15 @@ const targetProperties = {
   space: { type: "string", enum: ["image", "screen"] },
 };
 
+const clickModifiersJsonSchema = {
+  type: "array",
+  description:
+    "Modifier names held around the click, pressed in order and released in reverse. "
+    + "Accepts Ctrl, Shift, Alt, and Win (at most four).",
+  items: { type: "string", minLength: 1 },
+  maxItems: 4,
+};
+
 const waitConditionJsonSchema = {
   oneOf: [
     {
@@ -766,6 +775,7 @@ const batchStepJsonSchema = {
         ...targetProperties,
         button: { type: "string", enum: ["left", "middle", "right"] },
         count: { type: "integer", minimum: 1, maximum: MAX_CLICK_COUNT },
+        modifiers: clickModifiersJsonSchema,
         expect: expectJsonSchema,
       },
       required: ["kind"],
@@ -849,6 +859,7 @@ function createClickDefinition(provider: HostProvider): ToolDefinition {
         ...targetProperties,
         button: { type: "string", enum: ["left", "middle", "right"] },
         count: { type: "integer", minimum: 1, maximum: MAX_CLICK_COUNT },
+        modifiers: clickModifiersJsonSchema,
         expect: expectJsonSchema,
       },
       additionalProperties: false,

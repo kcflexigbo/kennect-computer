@@ -65,6 +65,16 @@ describe("ClickRequestSchema", () => {
     expect(() => ClickRequestSchema.parse({ nodeId: "n1:2", count: 0 })).toThrow();
     expect(() => ClickRequestSchema.parse({ nodeId: "n1:2", count: 11 })).toThrow();
   });
+
+  it("accepts click modifiers and rejects empty or excessive lists", () => {
+    expect(
+      ClickRequestSchema.parse({ nodeId: "n1:2", modifiers: ["Ctrl", "Shift"] }).modifiers,
+    ).toEqual(["Ctrl", "Shift"]);
+    expect(() => ClickRequestSchema.parse({ nodeId: "n1:2", modifiers: [""] })).toThrow();
+    expect(() =>
+      ClickRequestSchema.parse({ nodeId: "n1:2", modifiers: ["Ctrl", "Shift", "Alt", "Win", "Ctrl"] }),
+    ).toThrow();
+  });
 });
 
 describe("TypeRequestSchema", () => {

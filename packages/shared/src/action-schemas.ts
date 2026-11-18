@@ -119,6 +119,7 @@ const clickRequestShape = {
   space: CoordinateSpaceSchema.optional(),
   button: MouseButtonSchema.optional(),
   count: z.number().int().positive().max(MAX_CLICK_COUNT).optional(),
+  modifiers: z.array(z.string().min(1)).max(4).optional(),
   expect: z.array(ExpectPredicateSchema).optional(),
 };
 

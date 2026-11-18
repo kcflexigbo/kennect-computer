@@ -407,6 +407,33 @@ public sealed class DispatcherTests
     }
 
     [Fact]
+    public async Task ActionClickHoldsModifiersAroundTheClick()
+    {
+        var raw = NotepadRawWindow();
+        var harness = NewSelectionHarness(new FakeUiaWalker(), new FakeWindowCapture(), raw);
+        var info = harness.Registry.Register(raw);
+        harness.Selection.Select(info);
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request(
+                "action",
+                """{"kind":"click","x":5,"y":5,"space":"screen","button":"right","count":2,"modifiers":["Ctrl","Shift"]}"""));
+
+        Assert.True(response.TryGetProperty("result", out _));
+        Assert.Equal(
+            [
+                "MoveTo:5,5",
+                "KeyDown:17",
+                "KeyDown:16",
+                "Click:Right:1",
+                "Click:Right:1",
+                "KeyUp:16",
+                "KeyUp:17",
+            ],
+            harness.Input.Calls);
+    }
+
+    [Fact]
     public async Task ActionClickReturnsFocusRefusedAndSendsNoInput()
     {
         var raw = NotepadRawWindow();

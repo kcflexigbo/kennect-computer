@@ -1,3 +1,5 @@
+using System.Runtime.ExceptionServices;
+
 using KennectComputer.Host.Control;
 using KennectComputer.Host.Input;
 using KennectComputer.Host.Protocol;
@@ -14,9 +16,13 @@ namespace KennectComputer.Host.Actions;
 /// any focus change or input. A node target must belong to the stored snapshot
 /// generation and still match the live element's fingerprint; the action then
 /// prefers a semantic UIA pattern and falls back to clicking the live bounds
-/// center. Coordinate targets map through the snapshot's scale and source
-/// bounds (image space) or are already physical (screen space). Every failure
-/// sends no input and is raised as an <see cref="ActionFailedException"/>.
+/// center. A non-left button, a count other than one, or any modifier makes
+/// the click a mouse gesture, so semantic patterns are skipped and the
+/// bounds-center (or coordinate) path runs instead. Coordinate targets map
+/// through the snapshot's scale and source bounds (image space) or are already
+/// physical (screen space). Modifiers are held around the clicks and released
+/// in reverse on every path, and each click checks the stop token. Every
+/// failure sends no input and is raised as an <see cref="ActionFailedException"/>.
 /// </summary>
 public sealed class ClickAction
 {
@@ -65,6 +71,9 @@ public sealed class ClickAction
             throw Failure(ErrorCode.InvalidRequest, "Click count must be at least 1.");
         }
 
+        // An unknown modifier must fail before focus or any input.
+        var modifiers = ParseModifiers(request.Modifiers);
+
         // The window identity is verified above; now check the caller's
         // preconditions against one fresh read, before any focus or input.
         await _preflight
@@ -72,13 +81,16 @@ public sealed class ClickAction
             .ConfigureAwait(false);
 
         return hasNode
-            ? await ClickNodeAsync(resolved, request, cancellationToken).ConfigureAwait(false)
-            : await ClickPointAsync(resolved, request, cancellationToken).ConfigureAwait(false);
+            ? await ClickNodeAsync(resolved, request, modifiers, cancellationToken)
+                .ConfigureAwait(false)
+            : await ClickPointAsync(resolved, request, modifiers, cancellationToken)
+                .ConfigureAwait(false);
     }
 
     private async Task<ActionResult> ClickNodeAsync(
         ResolvedWindow window,
         ClickRequest request,
+        IReadOnlyList<ushort> modifiers,
         CancellationToken cancellationToken)
     {
         // TryGetNode re-checks the node ID's generation against the stored
@@ -107,7 +119,10 @@ public sealed class ClickAction
                 cancellationToken)
             .ConfigureAwait(false);
 
-        if (TrySemanticAction(live, cancellationToken))
+        // A non-left button, a multi-click, or a modified click is a mouse
+        // gesture: invoking a pattern could not express it.
+        if (RequiresMouseGesture(request) is false
+            && TrySemanticAction(live, cancellationToken))
         {
             return Succeeded(window.Info, "pattern");
         }
@@ -118,8 +133,7 @@ public sealed class ClickAction
         var center = CoordinateTarget.ResolveNodeCenter(live, window.Info, "click");
         cancellationToken.ThrowIfCancellationRequested();
         _input.MoveTo(center.X, center.Y);
-        cancellationToken.ThrowIfCancellationRequested();
-        _input.Click(request.Button, request.Count);
+        SendClick(request, modifiers, cancellationToken);
 
         return Succeeded(window.Info, "bounds");
     }
@@ -127,6 +141,7 @@ public sealed class ClickAction
     private async Task<ActionResult> ClickPointAsync(
         ResolvedWindow window,
         ClickRequest request,
+        IReadOnlyList<ushort> modifiers,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -154,10 +169,99 @@ public sealed class ClickAction
 
         cancellationToken.ThrowIfCancellationRequested();
         _input.MoveTo(point.X, point.Y);
-        cancellationToken.ThrowIfCancellationRequested();
-        _input.Click(request.Button, request.Count);
+        SendClick(request, modifiers, cancellationToken);
 
         return Succeeded(window.Info, "coordinates");
+    }
+
+    private static bool RequiresMouseGesture(ClickRequest request)
+        => request.Button != MouseButton.Left
+            || request.Count != 1
+            || request.Modifiers.Count > 0;
+
+    /// <summary>
+    /// Parses the click's modifier names into virtual keys, rejecting an
+    /// unknown name before the window is focused.
+    /// </summary>
+    private static IReadOnlyList<ushort> ParseModifiers(IReadOnlyList<string> modifiers)
+    {
+        if (modifiers.Count == 0)
+        {
+            return [];
+        }
+
+        var keys = new List<ushort>(modifiers.Count);
+        foreach (var modifier in modifiers)
+        {
+            if (!KeyParser.TryParseModifier(modifier, out var virtualKey))
+            {
+                throw Failure(
+                    ErrorCode.InvalidRequest,
+                    $"The click modifier \"{modifier}\" is not Ctrl, Shift, Alt, or Win.");
+            }
+
+            keys.Add(virtualKey);
+        }
+
+        return keys;
+    }
+
+    /// <summary>
+    /// Holds every modifier around the requested clicks and releases them in
+    /// reverse. The stop token is checked before each modifier and each click,
+    /// so a stop aborts a multi-click after at most one click; a failure after
+    /// a modifier went down still releases every pressed modifier.
+    /// </summary>
+    private void SendClick(
+        ClickRequest request,
+        IReadOnlyList<ushort> modifiers,
+        CancellationToken cancellationToken)
+    {
+        Exception? failure = null;
+        var pressed = new List<ushort>(modifiers.Count);
+
+        try
+        {
+            foreach (var modifier in modifiers)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                _input.KeyDown(modifier);
+                pressed.Add(modifier);
+            }
+
+            for (var index = 0; index < request.Count; index++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                _input.Click(request.Button, 1);
+            }
+        }
+        catch (Exception exception)
+        {
+            failure = exception;
+        }
+
+        Exception? releaseFailure = null;
+        for (var index = pressed.Count - 1; index >= 0; index--)
+        {
+            try
+            {
+                _input.KeyUp(pressed[index]);
+            }
+            catch (Exception exception)
+            {
+                releaseFailure ??= exception;
+            }
+        }
+
+        if (failure is not null)
+        {
+            ExceptionDispatchInfo.Capture(failure).Throw();
+        }
+
+        if (releaseFailure is not null)
+        {
+            ExceptionDispatchInfo.Capture(releaseFailure).Throw();
+        }
     }
 
     /// <summary>

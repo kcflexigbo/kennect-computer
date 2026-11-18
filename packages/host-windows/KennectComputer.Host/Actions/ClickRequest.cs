@@ -28,6 +28,14 @@ public sealed record ClickRequest
     /// <summary>How many clicks to send; must be at least one.</summary>
     public int Count { get; init; } = 1;
 
+    /// <summary>
+    /// Modifier names held around the click (Ctrl, Shift, Alt, Win), pressed in
+    /// order and released in reverse. Any modifier, a non-left button, or a
+    /// count other than one makes the click a mouse gesture rather than a
+    /// semantic pattern activation.
+    /// </summary>
+    public IReadOnlyList<string> Modifiers { get; init; } = [];
+
     /// <summary>Preconditions evaluated against a fresh read before any input.</summary>
     public IReadOnlyList<ExpectPredicate> Expect { get; init; } = [];
 }

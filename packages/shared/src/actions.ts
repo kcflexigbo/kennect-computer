@@ -44,6 +44,8 @@ export interface ClickRequest {
   space?: CoordinateSpace;
   button?: MouseButton;
   count?: number;
+  /** Modifier names held around the click, e.g. `["Ctrl", "Shift"]`. */
+  modifiers?: string[];
   expect?: ExpectPredicate[];
 }
 
