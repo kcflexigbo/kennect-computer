@@ -46,17 +46,31 @@ public sealed class ActionPreflight
     /// caller-facing "select a window before …" message.
     /// </summary>
     public ResolvedWindow ResolveSelectedWindow(string pendingAction)
+        => ResolveSelectedWindow(_selection, _registry, pendingAction);
+
+    /// <summary>
+    /// The same selected-window resolution without the focus and expectation
+    /// machinery, for read-only actions (find, read_text) that only need to
+    /// know which live window to read. The caller-facing failures are
+    /// identical, including clearing a selection whose window is gone.
+    /// </summary>
+    public static ResolvedWindow ResolveSelectedWindow(
+        SelectionStore selection,
+        WindowRegistry registry,
+        string pendingAction)
     {
+        ArgumentNullException.ThrowIfNull(selection);
+        ArgumentNullException.ThrowIfNull(registry);
         ArgumentException.ThrowIfNullOrEmpty(pendingAction);
 
-        var selected = _selection.Selected
+        var selected = selection.Selected
             ?? throw Failure(
                 ErrorCode.InvalidRequest,
                 $"No window is selected; select a window before {pendingAction}.");
 
-        if (!_registry.TryResolve(selected.WindowId, out var resolved) || resolved is null)
+        if (!registry.TryResolve(selected.WindowId, out var resolved) || resolved is null)
         {
-            _selection.Clear();
+            selection.Clear();
             throw Failure(ErrorCode.WindowGone, "The window is gone.");
         }
 
