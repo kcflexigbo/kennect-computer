@@ -127,6 +127,10 @@ The existing `NodeId`/`SnapshotStore` generation rules remain the authority.
   its bounds.
 - Node bounds in the outline are physical pixels; node actions do not need
   coordinate conversion.
+- A snapshot may crop the previous image with `region` (x, y, width, height in
+  that image's pixels). It requires a prior image and an unmoved window, and
+  returns a native-scale crop whose `sourceBounds` is the crop rectangle. The
+  crop becomes the current image, so later image-space coordinates refer to it.
 
 ### 6.3 Click
 
@@ -135,9 +139,16 @@ The existing `NodeId`/`SnapshotStore` generation rules remain the authority.
   with no modifiers; otherwise click the node's bounds center after foreground
   verification. A non-empty modifier list, a non-left button, or a count other
   than one always takes the bounds-center mouse path.
+- `text` (with an optional exact `role`): find the live element whose
+  accessible name contains the text (case-insensitive) and click it with the
+  same pattern-or-bounds decision. Exactly one match is required; none returns
+  `STALE_SNAPSHOT` and several return `INVALID_REQUEST`.
 - Coordinates: click at the mapped point with the requested button, count, and
   modifiers. Modifiers are pressed before the clicks and released in reverse
-  in a `finally`.
+  in a `finally`. When the point is over a small live element (or a text
+  rectangle is available from its container), the click is corrected to that
+  element's bounds center and the result reports it as `snappedTo`; a
+  container, a gap, or an unavailable tree keeps the mapped point.
 - The bounds-center fallback requires non-empty live bounds and a center inside
   the verified-foreground window; otherwise it returns `STALE_SNAPSHOT`.
 - The host verifies foreground before each click. Focus refusal returns

@@ -94,7 +94,7 @@ without starting anything, which is what automated checks use.
 | `computer_status` | Host/protocol version, platform, lock state, monitors, permissions |
 | `computer_windows` | List top-level windows with opaque IDs, titles, processes, bounds |
 | `computer_select` | Select and focus a target window, then return its accessibility outline |
-| `computer_snapshot` | Capture a window's accessibility outline, optionally with a PNG image |
+| `computer_snapshot` | Capture a window's accessibility outline, optionally with a PNG image; `region` returns a native-scale crop of the previous image |
 | `computer_focus` | Bring a window to the foreground, verifying the result |
 | `computer_stop` | Ask the host to stop; the host and session stay alive |
 
@@ -115,7 +115,7 @@ are the immediate preemption paths.
 
 | Tool | What it does |
 |---|---|
-| `computer_click` | Click a snapshot node (preferred) or `x`/`y` coordinates; `button` defaults to left, `count` to 1 (at most 10), and `modifiers` such as `["Ctrl","Shift"]` are held around the click |
+| `computer_click` | Click a snapshot node (preferred), live `text` (with an optional `role`), or `x`/`y` coordinates; a coordinate click snaps to the element under the point when one is found. `button` defaults to left, `count` to 1 (at most 10), and `modifiers` such as `["Ctrl","Shift"]` are held around the click |
 | `computer_type` | Type text; `method` is `paste` (default), `value`, or `keys`; optionally target a node |
 | `computer_key` | Press a key or chord such as `Enter`, `Tab`, `Ctrl+A`, or `Alt+F4` |
 | `computer_scroll` | Turn the wheel at a node or coordinate; `direction` and `amount` (1..100 notches) |
@@ -167,7 +167,7 @@ calls until it returns.
 ### Coordinate spaces
 
 `computer_click` and `computer_scroll` accept exactly one target: a `nodeId`,
-or both `x` and `y`.
+both `x` and `y`, or (for a click) `text` with an optional `role`.
 
 - `space: "image"` (the default) means pixels of the last returned snapshot
   image for the selected window. The image carries `scale` (physical pixels per
@@ -178,6 +178,25 @@ or both `x` and `y`.
 - `space: "screen"` means absolute physical screen pixels. It needs no
   snapshot, but the point must lie inside the window and the window is still
   verified foreground.
+
+`text` matches a case-insensitive substring of an element's accessible name,
+optionally narrowed by an exact `role`. The host looks the element up at action
+time: exactly one match is required — no match returns `STALE_SNAPSHOT`, and
+several return `INVALID_REQUEST` rather than guessing.
+
+A coordinate click is corrected to the live element under the mapped point when
+a small element (or a text rectangle) is there; the result reports the element
+as `snappedTo`. A container, a gap, or an unavailable accessibility tree keeps
+the estimated point.
+
+### Region crops
+
+`computer_snapshot` accepts `region: {x, y, width, height}` in pixels of the
+previous snapshot image. It requires a previous image and a window that has not
+moved since that snapshot, and returns a native-scale crop whose `sourceBounds`
+is the crop rectangle. The crop becomes the current image, so later image-space
+coordinates refer to the crop; this is the high-resolution fallback for apps
+whose accessibility tree exposes no usable targets.
 
 ### Expectations (`expect`)
 

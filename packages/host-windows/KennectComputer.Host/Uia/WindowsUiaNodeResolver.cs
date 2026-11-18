@@ -349,8 +349,14 @@ public sealed class WindowsUiaNodeResolver : IUiaNodeResolver
                 if (rectangles is not null)
                 {
                     var point = new System.Drawing.Point(x, y);
+                    var examined = 0;
                     foreach (var candidate in rectangles)
                     {
+                        if (++examined > 5000)
+                        {
+                            break;
+                        }
+
                         if (candidate.Width <= 0
                             || candidate.Height <= 0
                             || candidate.Height > 80
