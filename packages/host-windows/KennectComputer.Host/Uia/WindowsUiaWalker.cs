@@ -3,6 +3,7 @@ using System.Drawing;
 using FlaUI.Core;
 using FlaUI.Core.AutomationElements;
 using FlaUI.Core.Definitions;
+using FlaUI.Core.Patterns;
 using FlaUI.UIA3;
 
 using KennectComputer.Host.Protocol;
@@ -99,6 +100,7 @@ public sealed class WindowsUiaWalker : IUiaWalker
         var enabled = Read(() => element.Properties.IsEnabled.ValueOrDefault, true);
         var offscreen = Read(() => element.Properties.IsOffscreen.ValueOrDefault, false);
         var focused = Read(() => element.Properties.HasKeyboardFocus.ValueOrDefault, false);
+        var value = ReadValue(element);
 
         var children = new List<TreeModel>();
         AutomationElement? child = Read<AutomationElement?>(
@@ -126,6 +128,7 @@ public sealed class WindowsUiaWalker : IUiaWalker
             Role = MapRole(controlType),
             Name = name ?? string.Empty,
             Identifier = string.IsNullOrEmpty(identifier) ? null : identifier,
+            Value = value,
             Bounds = ToRect(bounds),
             Enabled = enabled,
             Offscreen = offscreen,
@@ -157,6 +160,11 @@ public sealed class WindowsUiaWalker : IUiaWalker
         cache.Add(properties.IsOffscreen);
         cache.Add(properties.HasKeyboardFocus);
 
+        // The value is read through the value pattern for edit-like controls;
+        // the pattern is cached here so the read stays inside the element's
+        // single cross-process snapshot.
+        cache.Add(automation.PropertyLibrary.Value.Value);
+
         var patterns = automation.PatternLibrary;
         cache.Add(patterns.InvokePattern);
         cache.Add(patterns.TogglePattern);
@@ -165,13 +173,55 @@ public sealed class WindowsUiaWalker : IUiaWalker
         cache.Add(patterns.ValuePattern);
         cache.Add(patterns.RangeValuePattern);
         cache.Add(patterns.TextEditPattern);
+        cache.Add(patterns.TextPattern);
         cache.Add(patterns.ScrollPattern);
         cache.Add(patterns.ScrollItemPattern);
         cache.Add(patterns.WindowPattern);
         return cache;
     }
 
-    private static List<string> ReadActions(AutomationElement element)
+    /// <summary>
+    /// Captures the element's value or text for host-internal content matching
+    /// (expect, find, wait). The value pattern covers edit-like controls
+    /// cheaply; the text pattern carries document content. The pattern lookup
+    /// and value property are cached with the element, so the only extra call
+    /// is the text read itself, and only for elements that expose text.
+    /// Empty values stay null so the model does not carry noise.
+    /// </summary>
+    private static string? ReadValue(AutomationElement element)
+    {
+        var valuePattern = Read<IValuePattern?>(
+            () => element.Patterns.Value.PatternOrDefault,
+            null);
+        if (valuePattern is not null)
+        {
+            var value = Read<string?>(
+                () => valuePattern.Value.ValueOrDefault,
+                null);
+            if (!string.IsNullOrEmpty(value))
+            {
+                return value;
+            }
+        }
+
+        var textPattern = Read<ITextPattern?>(
+            () => element.Patterns.Text.PatternOrDefault,
+            null);
+        if (textPattern is not null)
+        {
+            var text = Read<string?>(
+                () => textPattern.DocumentRange.GetText(-1),
+                null);
+            if (!string.IsNullOrEmpty(text))
+            {
+                return text;
+            }
+        }
+
+        return null;
+    }
+
+    internal static List<string> ReadActions(AutomationElement element)
     {
         var actions = new List<string>();
 
@@ -253,7 +303,7 @@ public sealed class WindowsUiaWalker : IUiaWalker
         }
     }
 
-    private static T Read<T>(Func<T> read, T fallback)
+    internal static T Read<T>(Func<T> read, T fallback)
     {
         try
         {
@@ -269,7 +319,7 @@ public sealed class WindowsUiaWalker : IUiaWalker
         }
     }
 
-    private static Rect ToRect(Rectangle bounds) => new()
+    internal static Rect ToRect(Rectangle bounds) => new()
     {
         X = bounds.X,
         Y = bounds.Y,
@@ -277,7 +327,7 @@ public sealed class WindowsUiaWalker : IUiaWalker
         Height = Math.Max(0, bounds.Height),
     };
 
-    private static string MapRole(ControlType controlType) => controlType switch
+    internal static string MapRole(ControlType controlType) => controlType switch
     {
         ControlType.Button => "button",
         ControlType.Edit => "edit",

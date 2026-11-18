@@ -15,6 +15,13 @@ public sealed record TreeModel
 
     public string? Identifier { get; init; }
 
+    /// <summary>
+    /// The element's text/value at capture time, used by expect/find/wait for
+    /// content matching. Host-internal only: the protocol <see cref="Node"/>
+    /// shape is frozen and this is never serialized or copied into it.
+    /// </summary>
+    internal string? Value { get; init; }
+
     public Rect Bounds { get; init; } = new();
 
     public bool Enabled { get; init; } = true;
