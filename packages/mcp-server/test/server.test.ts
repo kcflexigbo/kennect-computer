@@ -58,6 +58,10 @@ describe("computer_status MCP tool", () => {
       "computer_type",
       "computer_key",
       "computer_scroll",
+      "computer_find",
+      "computer_wait",
+      "computer_read_text",
+      "computer_batch",
     ]);
 
     const status = tools.find((tool) => tool.name === "computer_status");
@@ -202,6 +206,75 @@ describe("computer_status MCP tool", () => {
         expect: { type: "array" },
       },
       required: ["direction"],
+    });
+  });
+
+  it("advertises find, wait, and read_text as read-only and batch as mutating", async () => {
+    const client = await connect(providerFor({ request: vi.fn() }));
+
+    const { tools } = await client.listTools();
+
+    for (const name of ["computer_find", "computer_wait", "computer_read_text"]) {
+      const tool = tools.find((candidate) => candidate.name === name);
+      expect(tool?.annotations).toMatchObject({
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      });
+      expect(tool?.inputSchema).toMatchObject({
+        type: "object",
+        additionalProperties: false,
+      });
+    }
+
+    const find = tools.find((tool) => tool.name === "computer_find");
+    expect(find?.inputSchema).toMatchObject({
+      properties: {
+        text: { type: "string", minLength: 1 },
+        role: { type: "string", minLength: 1 },
+        maxResults: { type: "integer", minimum: 1 },
+      },
+      additionalProperties: false,
+    });
+
+    const wait = tools.find((tool) => tool.name === "computer_wait");
+    expect(wait?.inputSchema).toMatchObject({
+      properties: {
+        condition: { oneOf: expect.any(Array) },
+        present: { type: "boolean" },
+        timeoutMs: { type: "integer", minimum: 1 },
+        pollMs: { type: "integer", minimum: 1 },
+      },
+      required: ["condition"],
+      additionalProperties: false,
+    });
+
+    const readText = tools.find((tool) => tool.name === "computer_read_text");
+    expect(readText?.inputSchema).toMatchObject({
+      properties: {
+        nodeId: { type: "string", minLength: 1 },
+        maxLength: { type: "integer", minimum: 1 },
+      },
+      required: ["nodeId"],
+      additionalProperties: false,
+    });
+
+    const batch = tools.find((tool) => tool.name === "computer_batch");
+    expect(batch?.annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    });
+    expect(batch?.inputSchema).toMatchObject({
+      properties: {
+        steps: { type: "array", minItems: 1, maxItems: 50 },
+        snapshotBefore: { type: "boolean" },
+        snapshotAfter: { type: "boolean" },
+      },
+      required: ["steps"],
+      additionalProperties: false,
     });
   });
 });

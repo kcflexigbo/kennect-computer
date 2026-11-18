@@ -236,6 +236,10 @@ describe("computer_select and computer_focus MCP tools", () => {
       "computer_type",
       "computer_key",
       "computer_scroll",
+      "computer_find",
+      "computer_wait",
+      "computer_read_text",
+      "computer_batch",
     ]);
 
     const select = tools.find((tool) => tool.name === "computer_select");

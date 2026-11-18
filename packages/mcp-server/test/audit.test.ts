@@ -347,6 +347,10 @@ describe("MCP audit wiring", () => {
       "computer_type",
       "computer_key",
       "computer_scroll",
+      "computer_find",
+      "computer_wait",
+      "computer_read_text",
+      "computer_batch",
     ]);
 
     const calls: Array<{ name: string; arguments: Record<string, unknown> }> = [

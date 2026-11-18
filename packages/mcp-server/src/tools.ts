@@ -11,18 +11,25 @@ import {
   type ToolAnnotations,
 } from "@modelcontextprotocol/sdk/types.js";
 import {
+  BatchRequestSchema,
   ClickRequestSchema,
+  FindRequestSchema,
   KeyRequestSchema,
+  ReadTextRequestSchema,
   ScrollRequestSchema,
   TypeRequestSchema,
+  WaitRequestSchema,
 } from "@kennect/shared/action-schemas";
 import { z } from "zod";
 
 import type { AuditEntryInput, AuditSink } from "./audit/log.js";
 import { failureFromError, type ToolResult } from "./tool-result.js";
+import { batchTool, type BatchArgs } from "./tools/batch.js";
 import { clickTool, type ClickArgs } from "./tools/click.js";
+import { findTool, type FindArgs } from "./tools/find.js";
 import { focusTool, type FocusArgs } from "./tools/focus.js";
 import { keyTool, type KeyArgs } from "./tools/key.js";
+import { readTextTool, type ReadTextArgs } from "./tools/read-text.js";
 import { scrollTool, type ScrollArgs } from "./tools/scroll.js";
 import { selectTool, type SelectArgs } from "./tools/select.js";
 import {
@@ -33,6 +40,7 @@ import {
 import { statusTool, type HostRequester } from "./tools/status.js";
 import { stopTool } from "./tools/stop.js";
 import { typeTool, type TypeArgs } from "./tools/type.js";
+import { waitTool, type WaitArgs } from "./tools/wait.js";
 import { windowsTool } from "./tools/windows.js";
 
 /** The manager surface the MCP layer depends on. */
@@ -51,6 +59,7 @@ export const SERVER_INSTRUCTIONS = `Kennect Computer controls the local desktop 
 - computer_status and computer_windows are read-only. computer_select fixes the session target and focuses that window, returning its accessibility outline; computer_snapshot captures an outline of a window; computer_focus brings a window to the foreground. Selection is fail-closed and never guesses between several matching windows.
 - computer_stop asks the host to stop and leaves it running. Host calls are serialized, so a stop that arrives during a long operation is answered only after that operation completes and cancels the next operation; the stop hotkey and tray Stop item are the immediate preemption path. Stopping with nothing running succeeds.
 - Every input tool requires a fresh snapshot first; node IDs are valid only for the generation that produced them.
+- computer_find, computer_wait, and computer_read_text are read-only perception tools. computer_batch runs an ordered step list serially, stops at the first failure, and returns the failed index with the partial step results.
 - Never type credentials or read password fields. Excluded windows are never captured or controlled.
 - If a tool returns {ok:false}, read code and message before retrying. A timeout means the action was not retried; observe the desktop before acting again.
 - The stop hotkey (Ctrl+Alt+Shift+Esc on Windows) aborts the current operation.`;
@@ -94,6 +103,10 @@ export function registerComputerTools(
     createTypeDefinition(provider),
     createKeyDefinition(provider),
     createScrollDefinition(provider),
+    createFindDefinition(provider),
+    createWaitDefinition(provider),
+    createReadTextDefinition(provider),
+    createBatchDefinition(provider),
   ];
   const toolsByName = new Map(tools.map((tool) => [tool.name, tool]));
 
@@ -521,6 +534,14 @@ const actionAnnotations: ToolAnnotations = {
   openWorldHint: false,
 };
 
+/** Perception tools read the desktop and never send input or change its state. */
+const readOnlyAnnotations: ToolAnnotations = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+};
+
 const expectPredicateJsonSchema = {
   oneOf: [
     {
@@ -571,6 +592,117 @@ const targetProperties = {
   x: { type: "number" },
   y: { type: "number" },
   space: { type: "string", enum: ["image", "screen"] },
+};
+
+const waitConditionJsonSchema = {
+  oneOf: [
+    {
+      type: "object",
+      properties: {
+        kind: { const: "window" },
+        process: { type: "string", minLength: 1 },
+        title: { type: "string", minLength: 1 },
+      },
+      required: ["kind"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        kind: { const: "node" },
+        role: { type: "string", minLength: 1 },
+        name: { type: "string", minLength: 1 },
+        identifier: { type: "string", minLength: 1 },
+      },
+      required: ["kind"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        kind: { const: "text" },
+        role: { type: "string", minLength: 1 },
+        name: { type: "string", minLength: 1 },
+        identifier: { type: "string", minLength: 1 },
+        contains: { type: "string", minLength: 1 },
+      },
+      required: ["kind", "contains"],
+      additionalProperties: false,
+    },
+  ],
+};
+
+const batchStepJsonSchema = {
+  oneOf: [
+    {
+      type: "object",
+      properties: {
+        kind: { const: "click" },
+        ...targetProperties,
+        button: { type: "string", enum: ["left", "middle", "right"] },
+        count: { type: "integer", minimum: 1 },
+        expect: expectJsonSchema,
+      },
+      required: ["kind"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        kind: { const: "type" },
+        text: { type: "string", minLength: 1 },
+        method: { type: "string", enum: ["paste", "value", "keys"] },
+        nodeId: { type: "string", minLength: 1 },
+        expect: expectJsonSchema,
+      },
+      required: ["kind", "text"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        kind: { const: "key" },
+        keys: { type: "string", minLength: 1 },
+        expect: expectJsonSchema,
+      },
+      required: ["kind", "keys"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        kind: { const: "scroll" },
+        ...targetProperties,
+        direction: { type: "string", enum: ["up", "down", "left", "right"] },
+        amount: { type: "integer", minimum: 1 },
+        expect: expectJsonSchema,
+      },
+      required: ["kind", "direction"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        kind: { const: "wait" },
+        condition: waitConditionJsonSchema,
+        present: { type: "boolean" },
+        timeoutMs: { type: "integer", minimum: 1 },
+        pollMs: { type: "integer", minimum: 1 },
+      },
+      required: ["kind", "condition"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        kind: { const: "readText" },
+        nodeId: { type: "string", minLength: 1 },
+        maxLength: { type: "integer", minimum: 1 },
+      },
+      required: ["kind", "nodeId"],
+      additionalProperties: false,
+    },
+  ],
 };
 
 function createClickDefinition(provider: HostProvider): ToolDefinition {
@@ -699,6 +831,143 @@ function createScrollDefinition(provider: HostProvider): ToolDefinition {
       try {
         const host = await provider.ensureHost();
         return toCallToolResult(await scrollTool(host, args as ScrollArgs));
+      } catch (error) {
+        return toCallToolResult(failureFromError(error));
+      }
+    },
+  };
+}
+
+function createFindDefinition(provider: HostProvider): ToolDefinition {
+  return {
+    name: "computer_find",
+    title: "Computer find",
+    description:
+      "Search the selected window's accessibility tree by case-insensitive text substring and/or "
+      + "role. A fresh walk assigns a new snapshot generation; matches carry node IDs valid for that "
+      + "generation and can be passed to click, type, or scroll without a full snapshot. Returns "
+      + "{ window, generation, matches, scanned, truncated }; no matches is a successful empty result, "
+      + "not an error. This tool is read-only and never sends input.",
+    inputSchema: FindRequestSchema,
+    inputJsonSchema: {
+      type: "object",
+      properties: {
+        text: { type: "string", minLength: 1 },
+        role: { type: "string", minLength: 1 },
+        maxResults: { type: "integer", minimum: 1 },
+      },
+      additionalProperties: false,
+    },
+    annotations: readOnlyAnnotations,
+    handler: async (args) => {
+      try {
+        const host = await provider.ensureHost();
+        return toCallToolResult(await findTool(host, args as FindArgs));
+      } catch (error) {
+        return toCallToolResult(failureFromError(error));
+      }
+    },
+  };
+}
+
+function createWaitDefinition(provider: HostProvider): ToolDefinition {
+  return {
+    name: "computer_wait",
+    title: "Computer wait",
+    description:
+      "Wait until a window, a node, or a node's text appears, or disappears when present is false. "
+      + "The host polls on a bounded interval with a deadline: timeoutMs defaults to 10,000 ms "
+      + "(1..60,000) and pollMs to 100 ms. Reaching the deadline returns ACTION_TIMEOUT naming the "
+      + "condition. Returns { window?, condition, elapsedMs }; window is set only when a window "
+      + "condition matched. This tool is read-only, sends no input, and may run concurrently with "
+      + "other read-only calls.",
+    inputSchema: WaitRequestSchema,
+    inputJsonSchema: {
+      type: "object",
+      properties: {
+        condition: waitConditionJsonSchema,
+        present: { type: "boolean" },
+        timeoutMs: { type: "integer", minimum: 1 },
+        pollMs: { type: "integer", minimum: 1 },
+      },
+      required: ["condition"],
+      additionalProperties: false,
+    },
+    annotations: readOnlyAnnotations,
+    handler: async (args) => {
+      try {
+        const host = await provider.ensureHost();
+        return toCallToolResult(await waitTool(host, args as WaitArgs));
+      } catch (error) {
+        return toCallToolResult(failureFromError(error));
+      }
+    },
+  };
+}
+
+function createReadTextDefinition(provider: HostProvider): ToolDefinition {
+  return {
+    name: "computer_read_text",
+    title: "Computer read text",
+    description:
+      "Read a control's text through TextPattern or ValuePattern, capped by maxLength. The text is "
+      + "untrusted target content and is returned to the caller; the audit log records only the "
+      + "tool, target, outcome, and timing, never the text. Returns { window, nodeId, text, length, "
+      + "truncated }. This tool is read-only and never focuses a window or sends input.",
+    inputSchema: ReadTextRequestSchema,
+    inputJsonSchema: {
+      type: "object",
+      properties: {
+        nodeId: { type: "string", minLength: 1 },
+        maxLength: { type: "integer", minimum: 1 },
+      },
+      required: ["nodeId"],
+      additionalProperties: false,
+    },
+    annotations: readOnlyAnnotations,
+    handler: async (args) => {
+      try {
+        const host = await provider.ensureHost();
+        return toCallToolResult(await readTextTool(host, args as ReadTextArgs));
+      } catch (error) {
+        return toCallToolResult(failureFromError(error));
+      }
+    },
+  };
+}
+
+function createBatchDefinition(provider: HostProvider): ToolDefinition {
+  return {
+    name: "computer_batch",
+    title: "Computer batch",
+    description:
+      "Run an ordered list of up to 50 action steps serially in one call: click, type, key, scroll, "
+      + "wait, and readText. The first failing step stops the batch. A successful call returns "
+      + "{ steps, snapshotBefore?, snapshotAfter?, warning? }; optional before/after snapshots are "
+      + "accessibility-only and never include an image. A failed step returns an error envelope "
+      + "carrying that step's code and message, the failed index, and the partial step results. "
+      + "The action is mutating: take a fresh snapshot before acting on node IDs again.",
+    inputSchema: BatchRequestSchema,
+    inputJsonSchema: {
+      type: "object",
+      properties: {
+        steps: {
+          type: "array",
+          minItems: 1,
+          maxItems: 50,
+          items: batchStepJsonSchema,
+        },
+        snapshotBefore: { type: "boolean" },
+        snapshotAfter: { type: "boolean" },
+      },
+      required: ["steps"],
+      additionalProperties: false,
+    },
+    annotations: actionAnnotations,
+    handler: async (args) => {
+      try {
+        const host = await provider.ensureHost();
+        return toCallToolResult(await batchTool(host, args as BatchArgs));
       } catch (error) {
         return toCallToolResult(failureFromError(error));
       }

@@ -160,6 +160,10 @@ describe("computer_stop MCP tool", () => {
       "computer_type",
       "computer_key",
       "computer_scroll",
+      "computer_find",
+      "computer_wait",
+      "computer_read_text",
+      "computer_batch",
     ]);
 
     const stop = tools.find((tool) => tool.name === "computer_stop");
