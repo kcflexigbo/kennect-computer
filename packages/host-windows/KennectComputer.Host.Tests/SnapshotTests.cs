@@ -236,6 +236,16 @@ public sealed class SnapshotTests
         Assert.Contains(
             snapshot.Nodes,
             node => node.Role == "edit" && node.Name == "Editor");
+
+        // The window is deliberately shown without activation, so a focused
+        // node is not guaranteed; when UIA reports one it must be a shown node
+        // with the matching focused flag.
+        if (snapshot.FocusedNodeId is { } focusedNodeId)
+        {
+            Assert.Contains(
+                snapshot.Nodes,
+                node => node.NodeId == focusedNodeId && node.Focused);
+        }
     }
 
     private static UiaSnapshotter NewSnapshotter(
