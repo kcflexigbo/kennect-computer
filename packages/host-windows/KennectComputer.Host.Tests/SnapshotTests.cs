@@ -253,14 +253,16 @@ public sealed class SnapshotTests
         store.Save(
             "w_1",
             new Snapshot { Generation = 1, Nodes = [] },
-            new Dictionary<string, TreeModel> { [NodeId.Create(1, 1)] = firstSource });
+            new Dictionary<string, TreeModel> { [NodeId.Create(1, 1)] = firstSource },
+            DefaultBounds);
         Assert.True(store.TryGetNode("w_1", NodeId.Create(1, 1), out var first));
         Assert.Same(firstSource, first);
 
         store.Save(
             "w_1",
             new Snapshot { Generation = 2, Nodes = [] },
-            new Dictionary<string, TreeModel> { [NodeId.Create(2, 1)] = secondSource });
+            new Dictionary<string, TreeModel> { [NodeId.Create(2, 1)] = secondSource },
+            DefaultBounds);
 
         Assert.False(store.TryGetNode("w_1", NodeId.Create(1, 1), out _));
         Assert.True(store.TryGetNode("w_1", NodeId.Create(2, 1), out var second));
@@ -283,7 +285,8 @@ public sealed class SnapshotTests
                 new Dictionary<string, TreeModel>
                 {
                     [nodeId] = new TreeModel { Role = "button", Name = $"node{index}" },
-                });
+                },
+                DefaultBounds);
             store.TryGetNode("w_1", nodeId, out _);
         });
 
@@ -293,7 +296,8 @@ public sealed class SnapshotTests
             new Dictionary<string, TreeModel>
             {
                 [NodeId.Create(1, 1)] = new TreeModel { Role = "button", Name = "Final" },
-            });
+            },
+            DefaultBounds);
         Assert.True(store.TryGetNode("w_final", NodeId.Create(1, 1), out _));
     }
 

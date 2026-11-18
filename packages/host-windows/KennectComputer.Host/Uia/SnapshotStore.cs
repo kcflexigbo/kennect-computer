@@ -3,29 +3,58 @@ using KennectComputer.Host.Protocol;
 namespace KennectComputer.Host.Uia;
 
 /// <summary>
-/// Keeps the latest node map per window so later actions can resolve a node ID
-/// back to the element it was observed on. IDs from an older generation are
-/// rejected, because their element may now be a different control.
+/// Keeps the latest snapshot state per window so later actions can resolve a
+/// node ID back to the element it was observed on, and can map coordinates
+/// using the bounds and image scale from that same snapshot. IDs from an older
+/// generation are rejected, because their element may now be a different
+/// control.
 ///
 /// Pipe requests may interleave, so every operation takes the same gate.
 /// </summary>
 public sealed class SnapshotStore
 {
     private readonly object _gate = new();
-    private readonly Dictionary<string, Entry> _byWindow = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, SnapshotState> _byWindow = new(StringComparer.Ordinal);
 
     public void Save(
         string windowId,
         Snapshot snapshot,
-        IReadOnlyDictionary<string, TreeModel> nodeMap)
+        IReadOnlyDictionary<string, TreeModel> nodeMap,
+        Rect windowBounds)
     {
         ArgumentException.ThrowIfNullOrEmpty(windowId);
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(nodeMap);
+        ArgumentNullException.ThrowIfNull(windowBounds);
+
+        var image = snapshot.Image is { } payload
+            ? new ImageMetadata(payload.Scale, payload.SourceBounds)
+            : null;
+
+        var state = new SnapshotState(snapshot.Generation, nodeMap, windowBounds, image);
 
         lock (_gate)
         {
-            _byWindow[windowId] = new Entry(snapshot.Generation, nodeMap);
+            _byWindow[windowId] = state;
+        }
+    }
+
+    /// <summary>
+    /// Returns the latest state for the window. Callers must still compare the
+    /// state's generation with the generation embedded in a node ID.
+    /// </summary>
+    public bool TryGetState(string windowId, out SnapshotState? state)
+    {
+        state = null;
+
+        if (string.IsNullOrEmpty(windowId))
+        {
+            return false;
+        }
+
+        lock (_gate)
+        {
+            return _byWindow.TryGetValue(windowId, out state);
         }
     }
 
@@ -40,18 +69,18 @@ public sealed class SnapshotStore
 
         lock (_gate)
         {
-            if (!_byWindow.TryGetValue(windowId, out var entry))
+            if (!_byWindow.TryGetValue(windowId, out var state))
             {
                 return false;
             }
 
             if (!NodeId.TryParse(nodeId, out var generation, out _)
-                || generation != entry.Generation)
+                || generation != state.Generation)
             {
                 return false;
             }
 
-            return entry.Nodes.TryGetValue(nodeId, out node);
+            return state.Nodes.TryGetValue(nodeId, out node);
         }
     }
 
@@ -67,6 +96,4 @@ public sealed class SnapshotStore
             _byWindow.Remove(windowId);
         }
     }
-
-    private sealed record Entry(int Generation, IReadOnlyDictionary<string, TreeModel> Nodes);
 }

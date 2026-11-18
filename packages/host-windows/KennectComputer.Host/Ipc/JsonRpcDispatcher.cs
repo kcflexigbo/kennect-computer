@@ -426,7 +426,7 @@ public sealed class JsonRpcDispatcher
         }
 
         capture.Snapshot.Window = current.Info;
-        _snapshots.Save(windowId, capture.Snapshot, capture.NodeMap);
+        _snapshots.Save(windowId, capture.Snapshot, capture.NodeMap, current.Info.Bounds);
         return Success(id, capture.Snapshot);
     }
 

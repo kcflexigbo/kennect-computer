@@ -332,6 +332,29 @@ public sealed class DispatcherTests
     }
 
     [Fact]
+    public async Task SnapshotSavesTheReResolvedWindowBoundsForActions()
+    {
+        var payload = SampleImages.Payload();
+        var raw = NotepadRawWindow();
+        var harness = NewSelectionHarness(new FakeUiaWalker(), new FakeWindowCapture(payload), raw);
+        var info = harness.Registry.Register(raw);
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("snapshot", $$"""{"windowId":"{{info.WindowId}}","image":true}"""));
+
+        Assert.True(response.TryGetProperty("result", out _));
+        Assert.True(harness.Snapshots.TryGetState(info.WindowId, out var state));
+        Assert.NotNull(state);
+        Assert.Equal(1, state.Generation);
+        Assert.Equal(raw.Bounds.X, state.WindowBounds.X);
+        Assert.Equal(raw.Bounds.Y, state.WindowBounds.Y);
+        Assert.Equal(raw.Bounds.Width, state.WindowBounds.Width);
+        Assert.Equal(raw.Bounds.Height, state.WindowBounds.Height);
+        Assert.NotNull(state.Image);
+        Assert.Equal(payload.Scale, state.Image.Scale);
+    }
+
+    [Fact]
     public async Task SnapshotVisionModeStillCapturesTheImage()
     {
         var payload = SampleImages.Payload();
@@ -777,6 +800,7 @@ public sealed class DispatcherTests
             enumerator,
             pid => $@"C:\tests\{pid}.exe");
         var fakeWalker = walker as FakeUiaWalker ?? new FakeUiaWalker();
+        var snapshots = new SnapshotStore();
         var dispatcher = new JsonRpcDispatcher(
             tokens,
             new FakeMonitorProvider(),
@@ -785,7 +809,7 @@ public sealed class DispatcherTests
             selection,
             registry,
             NewSnapshotter(walker, capture),
-            new SnapshotStore(),
+            snapshots,
             new ControlSession(),
             perception);
 
@@ -796,7 +820,8 @@ public sealed class DispatcherTests
             fakeWalker,
             capture,
             api,
-            selectionStore);
+            selectionStore,
+            snapshots);
     }
 
     private static JsonRpcDispatcher NewDispatcher(
@@ -838,7 +863,8 @@ public sealed class DispatcherTests
         FakeUiaWalker Walker,
         FakeWindowCapture Capture,
         FakeWindowApi Api,
-        SelectionStore Selection);
+        SelectionStore Selection,
+        SnapshotStore Snapshots);
 
     private static string NewTempDir()
     {

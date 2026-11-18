@@ -74,6 +74,13 @@ public sealed class UiaSnapshotter
         _captureImage = capture ?? ScreenCapture.Capture;
     }
 
+    /// <summary>
+    /// Reserves the next snapshot generation. Node IDs embed the generation,
+    /// so a caller that builds its own snapshot (the find action) shares this
+    /// sequence and never collides with a captured snapshot.
+    /// </summary>
+    public int NextGeneration() => Interlocked.Increment(ref _generation);
+
     public Snapshot Snapshot(
         nint hwnd,
         Rect bounds,
@@ -91,7 +98,7 @@ public sealed class UiaSnapshotter
         ArgumentNullException.ThrowIfNull(options);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var generation = Interlocked.Increment(ref _generation);
+        var generation = NextGeneration();
 
         if (options.Mode == SnapshotMode.Vision)
         {
