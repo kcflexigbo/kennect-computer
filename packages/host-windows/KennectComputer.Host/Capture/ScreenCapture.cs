@@ -47,7 +47,8 @@ public static class ScreenCapture
         nint hwnd,
         Rect bounds,
         int imageLongEdge = SnapshotOptions.DefaultImageLongEdge,
-        bool enabled = true)
+        bool enabled = true,
+        int maxImageLongEdge = SnapshotOptions.DefaultMaxImageLongEdge)
     {
         if (!enabled
             || hwnd == nint.Zero
@@ -61,7 +62,9 @@ public static class ScreenCapture
         try
         {
             using var bitmap = TryPrintWindow(hwnd, bounds) ?? TryCopyFromScreen(hwnd, bounds);
-            return bitmap is null ? null : Encode(bitmap, imageLongEdge, bounds);
+            return bitmap is null
+                ? null
+                : Encode(bitmap, imageLongEdge, bounds, maxImageLongEdge);
         }
         catch (Exception)
         {
@@ -71,15 +74,20 @@ public static class ScreenCapture
 
     /// <summary>
     /// Downscales so the long edge is at most <paramref name="imageLongEdge"/>
-    /// (clamped to <see cref="SnapshotOptions.DefaultMaxImageLongEdge"/>), encodes
-    /// PNG, and reports <c>scale</c> as physical pixels per returned image pixel.
+    /// (clamped to <paramref name="maxImageLongEdge"/>, itself clamped to the
+    /// protocol maximum), encodes PNG, and reports <c>scale</c> as physical
+    /// pixels per returned image pixel.
     /// </summary>
-    public static ImagePayload Encode(Bitmap bitmap, int imageLongEdge, Rect sourceBounds)
+    public static ImagePayload Encode(
+        Bitmap bitmap,
+        int imageLongEdge,
+        Rect sourceBounds,
+        int maxImageLongEdge = SnapshotOptions.DefaultMaxImageLongEdge)
     {
         ArgumentNullException.ThrowIfNull(bitmap);
         ArgumentNullException.ThrowIfNull(sourceBounds);
 
-        var longEdge = ClampLongEdge(imageLongEdge);
+        var longEdge = ClampLongEdge(imageLongEdge, maxImageLongEdge);
         var longest = Math.Max(bitmap.Width, bitmap.Height);
         var factor = longest > longEdge ? longEdge / (double)longest : 1.0;
 
@@ -160,11 +168,20 @@ public static class ScreenCapture
         }
     }
 
-    private static int ClampLongEdge(int imageLongEdge)
-        => Math.Clamp(
-            imageLongEdge <= 0 ? SnapshotOptions.DefaultImageLongEdge : imageLongEdge,
+    private static int ClampLongEdge(int imageLongEdge, int maxImageLongEdge)
+    {
+        var maximum = Math.Clamp(
+            maxImageLongEdge <= 0
+                ? SnapshotOptions.DefaultMaxImageLongEdge
+                : maxImageLongEdge,
             1,
             SnapshotOptions.DefaultMaxImageLongEdge);
+
+        return Math.Clamp(
+            imageLongEdge <= 0 ? SnapshotOptions.DefaultImageLongEdge : imageLongEdge,
+            1,
+            maximum);
+    }
 
     private static Bitmap? TryPrintWindow(nint hwnd, Rect bounds)
     {

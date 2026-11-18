@@ -31,6 +31,11 @@ export interface FakeHostOptions {
   statusError?: { code: string; message: string; data?: Record<string, unknown> };
   /** Write `session.json` into the temp directory (defaults to true). */
   writeSession?: boolean;
+  /**
+   * Delay before the pipe starts accepting connections, while `session.json`
+   * is published immediately. Models the host's on-demand startup race.
+   */
+  listenDelayMs?: number;
 }
 
 export interface FakeHost {
@@ -97,6 +102,9 @@ class FakeHostServer implements FakeHost {
   private activeStatus = 0;
   private peakConcurrentStatus = 0;
   private closed = false;
+  private listenTimer: NodeJS.Timeout | null = null;
+  private cancelListen: (() => void) | null = null;
+  private listenPromise: Promise<void> | null = null;
 
   constructor(dir: string, token: string, tokenPath: string, options: FakeHostOptions) {
     this.dir = dir;
@@ -116,7 +124,7 @@ class FakeHostServer implements FakeHost {
     return this.peakConcurrentStatus;
   }
 
-  async listen(): Promise<void> {
+  private async listen(): Promise<void> {
     await new Promise<void>((resolve, reject) => {
       const onError = (error: Error) => reject(error);
       this.server.once("error", onError);
@@ -127,15 +135,56 @@ class FakeHostServer implements FakeHost {
     });
   }
 
+  /** Starts listening now, or after `delayMs`; returns a promise when immediate. */
+  start(delayMs: number): Promise<void> | undefined {
+    if (delayMs <= 0) {
+      this.listenPromise = this.listen();
+      return this.listenPromise;
+    }
+
+    this.listenPromise = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.listenTimer = null;
+        this.cancelListen = null;
+        this.listen().then(resolve, reject);
+      }, delayMs);
+      this.listenTimer = timer;
+      this.cancelListen = () => {
+        clearTimeout(timer);
+        this.listenTimer = null;
+        this.cancelListen = null;
+        resolve();
+      };
+    });
+    // close() observes the rejection; this keeps a failed delayed start from
+    // surfacing as an unhandled rejection if the test never gets that far.
+    void this.listenPromise.catch(() => undefined);
+    return undefined;
+  }
+
   async close(): Promise<void> {
     if (this.closed) {
       return;
     }
     this.closed = true;
+
+    this.cancelListen?.();
+    if (this.listenPromise !== null) {
+      try {
+        await this.listenPromise;
+      } catch {
+        // The listener failed to start; nothing to close.
+      }
+    }
+
     for (const socket of this.sockets) {
       socket.destroy();
     }
-    await new Promise<void>((resolve) => this.server.close(() => resolve()));
+
+    if (this.server.listening) {
+      await new Promise<void>((resolve) => this.server.close(() => resolve()));
+    }
+
     await rm(this.dir, { recursive: true, force: true });
   }
 
@@ -238,6 +287,11 @@ class FakeHostServer implements FakeHost {
       return;
     }
 
+    if (method === "stop") {
+      await this.send(socket, { jsonrpc: "2.0", id, result: { ok: true } });
+      return;
+    }
+
     await this.send(socket, {
       jsonrpc: "2.0",
       id,
@@ -277,7 +331,10 @@ export async function startFakeHost(options: FakeHostOptions = {}): Promise<Fake
   const tokenPath = options.tokenPath ?? path.join(dir, "session.token");
 
   const host = new FakeHostServer(dir, token, tokenPath, options);
-  await host.listen();
+  const started = host.start(options.listenDelayMs ?? 0);
+  if (started !== undefined) {
+    await started;
+  }
 
   if (options.writeSession !== false) {
     await writeFile(

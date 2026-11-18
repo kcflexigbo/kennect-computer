@@ -11,10 +11,15 @@ export const StopResultSchema = z.object({ ok: z.literal(true) }).strict();
 export type StopResult = z.infer<typeof StopResultSchema>;
 
 /**
- * `computer_stop`: asks the host to abort the in-flight operation. The host
- * cancels the current operation's token and stays alive, so stopping with
- * nothing running is still a success (R35). Returns `{ ok: true, data: { ok: true } }`
- * under the R18 envelope.
+ * `computer_stop`: sends the host's `stop` method, which cancels the operation
+ * token and stays alive, so stopping with nothing running is still a success
+ * (R35) and a later operation starts from a fresh token.
+ *
+ * The request is queued like every other host call: the host reads the next
+ * frame only after the running operation returns, so this cannot preempt work
+ * already in flight. The tray Stop item and the global hotkey call
+ * `ControlSession.Stop` directly and are the immediate preemption path.
+ * Returns `{ ok: true, data: { ok: true } }` under the R18 envelope.
  */
 export async function stopTool(
   host: HostRequester,

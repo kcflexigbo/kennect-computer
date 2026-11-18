@@ -135,6 +135,71 @@ public sealed class AuthorizationTests
         await auth.AuthorizeAsync(@"C:\Apps\Other\Other.exe", default);
         Assert.Equal(1, prompt.Calls);
     }
+
+    [Fact]
+    public async Task CancellationClosesTheAuthorizationDialog()
+    {
+        // A stop abandons the wait on the tray thread but must also close the
+        // modal; otherwise the host's own dialog lingers on screen.
+        var view = new FakeAuthorizationDialogView();
+        var prompt = new WinFormsAuthorizationPrompt(work => Task.Run(work), _ => view);
+        using var cancellation = new CancellationTokenSource();
+
+        var ask = prompt.AskAsync(@"C:\Apps\App\App.exe", cancellation.Token);
+        await view.AskStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => ask);
+        Assert.Equal(1, view.CloseCalls);
+        await view.Disposed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task AStopBeforeTheDialogIsCreatedDoesNotShowIt()
+    {
+        var view = new FakeAuthorizationDialogView();
+        var prompt = new WinFormsAuthorizationPrompt(work => Task.Run(work), _ => view);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => prompt.AskAsync(@"C:\Apps\App\App.exe", cancellation.Token));
+
+        Assert.Equal(0, view.AskCalls);
+        Assert.Equal(0, view.CloseCalls);
+    }
+}
+
+internal sealed class FakeAuthorizationDialogView : IAuthorizationDialogView
+{
+    private readonly ManualResetEventSlim _closed = new(initialState: false);
+
+    public TaskCompletionSource AskStarted { get; } =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public TaskCompletionSource Disposed { get; } =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public int AskCalls { get; private set; }
+
+    public int CloseCalls { get; private set; }
+
+    public AuthorizationDecision Ask()
+    {
+        AskCalls++;
+        AskStarted.TrySetResult();
+        _closed.Wait(TimeSpan.FromSeconds(10));
+        return AuthorizationDecision.Deny;
+    }
+
+    public void Close()
+    {
+        CloseCalls++;
+        _closed.Set();
+    }
+
+    public void Dispose() => Disposed.TrySetResult();
 }
 
 internal sealed class FakeAuthorizationPrompt : IAuthorizationPrompt

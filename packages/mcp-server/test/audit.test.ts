@@ -1,5 +1,6 @@
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -15,6 +16,7 @@ import { ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AuditLog, type AuditEntryInput } from "../src/audit/log.js";
+import { resolveAuditRetentionDays } from "../src/config.js";
 import { HostError } from "../src/errors.js";
 import { createMcpServer, type McpServerOptions } from "../src/index.js";
 import type { HostProvider } from "../src/tools.js";
@@ -116,6 +118,66 @@ describe("AuditLog", () => {
 
     expect(existsSync(expired)).toBe(false);
     expect(existsSync(kept)).toBe(true);
+  });
+
+  it("deletes exactly the day outside the retention window", () => {
+    // Seven days from 2026-11-10 includes 2026-11-04 and excludes 2026-11-03.
+    const dir = temporaryDirectory();
+    const outside = path.join(dir, "2026-11-03.jsonl");
+    const boundary = path.join(dir, "2026-11-04.jsonl");
+    writeFileSync(outside, "{}\n");
+    writeFileSync(boundary, "{}\n");
+
+    new AuditLog({
+      dir,
+      retentionDays: 7,
+      now: () => new Date("2026-11-10T23:59:59Z"),
+    });
+
+    expect(existsSync(outside)).toBe(false);
+    expect(existsSync(boundary)).toBe(true);
+  });
+
+  it("uses the configured retention to prune entries", () => {
+    const dir = temporaryDirectory();
+    const configPath = path.join(dir, "config.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({ privacy: { auditRetentionDays: 2 } }),
+      "utf8",
+    );
+
+    const auditDir = path.join(dir, "audit");
+    mkdirSync(auditDir, { recursive: true });
+    const expired = path.join(auditDir, "2026-11-08.jsonl");
+    const kept = path.join(auditDir, "2026-11-09.jsonl");
+    writeFileSync(expired, "{}\n");
+    writeFileSync(kept, "{}\n");
+
+    new AuditLog({
+      dir: auditDir,
+      retentionDays: resolveAuditRetentionDays({ configPath, userConfigPath: null }),
+      now: fixedNow,
+    });
+
+    expect(existsSync(expired)).toBe(false);
+    expect(existsSync(kept)).toBe(true);
+  });
+
+  it("reports a run of write failures once", () => {
+    const parent = temporaryDirectory();
+    const unwritable = path.join(parent, "occupied");
+    writeFileSync(unwritable, "not a directory\n");
+    const onError = vi.fn();
+
+    const log = new AuditLog({ dir: unwritable, now: fixedNow, onError });
+
+    log.write({ sessionId: "s1", tool: "computer_status", result: "ok", durationMs: 1 });
+    log.write({ sessionId: "s1", tool: "computer_windows", result: "ok", durationMs: 2 });
+    log.write({ sessionId: "s1", tool: "computer_stop", result: "ok", durationMs: 3 });
+
+    // One report for the whole failing run, not one per call.
+    expect(onError).toHaveBeenCalledTimes(1);
   });
 
   it("writes one file per UTC day and appends entries", () => {

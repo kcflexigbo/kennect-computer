@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 
 using KennectComputer.Host.Auth;
+using KennectComputer.Host.Config;
 using KennectComputer.Host.Control;
 using KennectComputer.Host.Protocol;
 using KennectComputer.Host.Uia;
@@ -35,6 +36,11 @@ public sealed class JsonRpcDispatcher
     private readonly UiaSnapshotter _snapshotter;
     private readonly SnapshotStore _snapshots;
     private readonly ControlSession _control;
+    private readonly int _defaultMaxDepth;
+    private readonly int _defaultMaxNodes;
+    private readonly int _defaultImageLongEdge;
+    private readonly int _maxImageLongEdge;
+    private readonly SnapshotMode _defaultMode;
 
     public JsonRpcDispatcher(
         TokenStore tokens,
@@ -45,7 +51,8 @@ public sealed class JsonRpcDispatcher
         WindowRegistry registry,
         UiaSnapshotter snapshotter,
         SnapshotStore snapshots,
-        ControlSession control)
+        ControlSession control,
+        PerceptionConfig? perception = null)
     {
         _tokens = tokens ?? throw new ArgumentNullException(nameof(tokens));
         _monitors = monitors ?? throw new ArgumentNullException(nameof(monitors));
@@ -56,6 +63,26 @@ public sealed class JsonRpcDispatcher
         _snapshotter = snapshotter ?? throw new ArgumentNullException(nameof(snapshotter));
         _snapshots = snapshots ?? throw new ArgumentNullException(nameof(snapshots));
         _control = control ?? throw new ArgumentNullException(nameof(control));
+
+        // Perception settings are host defaults: a request may tighten them,
+        // but a per-user config change must change behavior. The protocol's
+        // hard caps still bound the effective values.
+        var configured = perception ?? new PerceptionConfig();
+        _defaultMaxDepth = Math.Clamp(configured.MaxDepth, 1, MaxSnapshotDepth);
+        _defaultMaxNodes = Math.Clamp(configured.MaxNodes, 1, MaxSnapshotNodes);
+        _maxImageLongEdge = Math.Clamp(
+            configured.MaxImageLongEdge,
+            1,
+            SnapshotOptions.DefaultMaxImageLongEdge);
+        _defaultImageLongEdge = Math.Clamp(
+            configured.ImageLongEdge <= 0
+                ? SnapshotOptions.DefaultImageLongEdge
+                : configured.ImageLongEdge,
+            1,
+            _maxImageLongEdge);
+        _defaultMode = TryParseSnapshotMode(configured.DefaultMode, out var mode)
+            ? mode
+            : SnapshotMode.Both;
     }
 
     /// <summary>
@@ -276,6 +303,11 @@ public sealed class JsonRpcDispatcher
                 "INVALID_REQUEST");
         }
 
+        if (_desktop.IsLocked())
+        {
+            return DesktopUnavailableError(id);
+        }
+
         var result = await _selection
             .SelectAsync(criteria, _control.Token)
             .ConfigureAwait(false);
@@ -302,7 +334,7 @@ public sealed class JsonRpcDispatcher
                 "INVALID_REQUEST");
         }
 
-        var mode = SnapshotMode.Both;
+        var mode = _defaultMode;
         if (parameters.TryGetProperty("mode", out var modeElement)
             && (modeElement.ValueKind != JsonValueKind.String
                 || !TryParseSnapshotMode(modeElement.GetString(), out mode)))
@@ -317,14 +349,14 @@ public sealed class JsonRpcDispatcher
         if (!TryReadOptionalInt(
                 parameters,
                 "maxDepth",
-                SnapshotOptions.DefaultMaxDepth,
+                _defaultMaxDepth,
                 minimum: 1,
                 maximum: MaxSnapshotDepth,
                 out var maxDepth)
             || !TryReadOptionalInt(
                 parameters,
                 "maxNodes",
-                SnapshotOptions.DefaultMaxNodes,
+                _defaultMaxNodes,
                 minimum: 1,
                 maximum: MaxSnapshotNodes,
                 out var maxNodes))
@@ -351,9 +383,17 @@ public sealed class JsonRpcDispatcher
             image = imageElement.GetBoolean();
         }
 
+        if (_desktop.IsLocked())
+        {
+            return DesktopUnavailableError(id);
+        }
+
         var windowId = windowIdElement.GetString()!;
         if (!_registry.TryResolve(windowId, out var resolved) || resolved is null)
         {
+            // Resolution failed for death, identity change, or a newly
+            // matching privacy exclusion; the target must not stay selected.
+            _selection.ClearIfSelected(windowId);
             _snapshots.Clear(windowId);
             return Error(id, ActionErrorCode, "The window is gone.", "WINDOW_GONE");
         }
@@ -364,6 +404,8 @@ public sealed class JsonRpcDispatcher
             MaxDepth = maxDepth,
             MaxNodes = maxNodes,
             Image = image,
+            ImageLongEdge = _defaultImageLongEdge,
+            MaxImageLongEdge = _maxImageLongEdge,
         };
 
         // The registry's freshly resolved bounds are authoritative for both the
@@ -378,6 +420,7 @@ public sealed class JsonRpcDispatcher
         // snapshot for a window the registry can no longer resolve.
         if (!_registry.TryResolve(windowId, out var current) || current is null)
         {
+            _selection.ClearIfSelected(windowId);
             _snapshots.Clear(windowId);
             return Error(id, ActionErrorCode, "The window is gone.", "WINDOW_GONE");
         }
@@ -468,12 +511,28 @@ public sealed class JsonRpcDispatcher
                 "INVALID_REQUEST");
         }
 
+        if (_desktop.IsLocked())
+        {
+            return DesktopUnavailableError(id);
+        }
+
         var result = await _selection
             .SelectAsync(windowIdElement.GetString()!, _control.Token)
             .ConfigureAwait(false);
 
         return FromSelectResult(id, result);
     }
+
+    /// <summary>
+    /// A locked or secure desktop fails closed with no input, focus, or capture
+    /// attempted (DESIGN §8 hard rule 2). Status still reports the lock state.
+    /// </summary>
+    private static JsonElement DesktopUnavailableError(JsonNode? id)
+        => Error(
+            id,
+            ActionErrorCode,
+            "The desktop is locked; no operation was attempted.",
+            "DESKTOP_UNAVAILABLE");
 
     private static JsonElement FromSelectResult(JsonNode? id, SelectResult result)
     {

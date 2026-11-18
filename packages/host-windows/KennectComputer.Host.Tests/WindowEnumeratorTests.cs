@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Diagnostics;
 
+using KennectComputer.Host.Config;
+using KennectComputer.Host.Policy;
 using KennectComputer.Host.Protocol;
 using KennectComputer.Host.Windows;
 
@@ -27,9 +29,107 @@ public sealed class WindowEnumeratorTests
         var window = Assert.Single(list);
         Assert.Equal("Notepad", window.Title);
         Assert.Equal("Notepad", window.ProcessName);
-        Assert.Equal("w_1", window.WindowId);
+        Assert.Matches("^w_[0-9]+$", window.WindowId);
         Assert.Equal(100, window.Pid);
         Assert.Equal(800, window.Bounds.Width);
+    }
+
+    [Fact]
+    public void NeverListsTheHostsOwnWindows()
+    {
+        // The per-app authorization dialog belongs to the host process itself
+        // and is a normal titled, visible window. The host must never hand out
+        // an ID for its own windows, even when no config exclusion names them.
+        var hostWindow = new RawWindow(
+            2,
+            Environment.ProcessId,
+            "Kennect Computer",
+            "KennectComputer.Host",
+            new Rect(0, 0, 560, 190));
+        var api = new FakeWindowApi(NotepadWindow(), hostWindow);
+
+        var list = new WindowEnumerator(api, new WindowRegistry(api)).List();
+
+        var window = Assert.Single(list);
+        Assert.Equal("Notepad", window.Title);
+        Assert.NotEqual(Environment.ProcessId, window.Pid);
+    }
+
+    [Fact]
+    public void RegistryInvalidatesAWindowThatBecomesExcluded()
+    {
+        var policy = new ExclusionPolicy(
+            new AppConfig
+            {
+                Privacy = new PrivacyConfig { ExcludedTitles = ["*bank*"] },
+            });
+        var api = new FakeWindowApi(NotepadWindow());
+        var registry = new WindowRegistry(api, policy);
+        var info = registry.Register(NotepadWindow());
+
+        // The window ID outlives the title: the same Chrome window navigates
+        // from "New Tab" to online banking after enumeration.
+        api.Replace(new RawWindow(
+            1,
+            100,
+            "Bank of America - Online Banking",
+            "Notepad",
+            new Rect(0, 0, 800, 600)));
+
+        Assert.False(registry.TryResolve(info.WindowId, out _));
+
+        // Invalidation is permanent for that ID, even if the title changes back.
+        api.Replace(NotepadWindow());
+        Assert.False(registry.TryResolve(info.WindowId, out _));
+    }
+
+    [Fact]
+    public void RegistriesFromDifferentHostStartsUseDisjointIdSpaces()
+    {
+        var firstApi = new FakeWindowApi(NotepadWindow());
+        var secondApi = new FakeWindowApi(NotepadWindow());
+        var first = new WindowRegistry(firstApi);
+        var second = new WindowRegistry(secondApi);
+
+        var firstIds = Enumerable.Range(0, 5)
+            .Select(index => first.Register(new RawWindow(
+                index + 1,
+                100 + index,
+                $"Note {index}",
+                "Notepad",
+                new Rect(0, 0, 800, 600))))
+            .Select(window => window.WindowId)
+            .ToList();
+        var secondIds = Enumerable.Range(0, 5)
+            .Select(index => second.Register(new RawWindow(
+                index + 1,
+                100 + index,
+                $"Note {index}",
+                "Notepad",
+                new Rect(0, 0, 800, 600))))
+            .Select(window => window.WindowId)
+            .ToList();
+
+        // A window ID from before a host restart must never resolve in the new
+        // host to a different window.
+        Assert.Empty(firstIds.Intersect(secondIds, StringComparer.Ordinal));
+        Assert.All(firstIds.Concat(secondIds), id => Assert.Matches("^w_[0-9]+$", id));
+    }
+
+    [Fact]
+    public void RegistriesWithExplicitOriginsDoNotOverlap()
+    {
+        var first = new WindowRegistry(new FakeWindowApi(), exclusions: null, idOrigin: 0);
+        var second = new WindowRegistry(
+            new FakeWindowApi(),
+            exclusions: null,
+            idOrigin: WindowRegistry.IdSpace);
+
+        var firstId = first.Register(NotepadWindow()).WindowId;
+        var secondId = second.Register(NotepadWindow()).WindowId;
+
+        Assert.Equal("w_1", firstId);
+        Assert.Equal($"w_{WindowRegistry.IdSpace + 1}", secondId);
     }
 
     [Fact]

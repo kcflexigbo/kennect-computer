@@ -6,10 +6,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { HOST_REQUEST_TIMEOUT_MS } from "../src/config.js";
 import { HostError } from "../src/errors.js";
+import { HostClient } from "../src/host-client.js";
 import { createMcpServer } from "../src/index.js";
 import type { HostProvider } from "../src/tools.js";
 import type { HostRequester } from "../src/tools/status.js";
 import { stopTool } from "../src/tools/stop.js";
+import { startFakeHost } from "./support/fake-host.js";
 
 interface FakeHost extends HostRequester {
   readonly calls: Array<[string, unknown]>;
@@ -84,6 +86,36 @@ describe("stopTool", () => {
       message: "socket exploded",
       retryable: true,
     });
+  });
+
+  it("queues behind a slow in-flight request instead of preempting it", async () => {
+    // The documented M1 contract: the host reads the next frame only after the
+    // running operation returns, and the client serializes requests through one
+    // queue. A stop issued during a long snapshot is answered after it, so it
+    // cannot abort work that is already in flight; the hotkey/tray path does.
+    const fake = await startFakeHost({ statusDelayMs: 200 });
+    const client = new HostClient(fake.pipePath, fake.tokenPath);
+
+    try {
+      await client.connect();
+
+      const slow = client.request("status", {});
+      const stop = stopTool(client);
+      let stopSettled = false;
+      void stop.then(() => {
+        stopSettled = true;
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(stopSettled).toBe(false);
+
+      await slow;
+      await expect(stop).resolves.toEqual({ ok: true, data: { ok: true } });
+      expect(stopSettled).toBe(true);
+    } finally {
+      client.close();
+      await fake.close();
+    }
   });
 });
 

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using KennectComputer.Host.Auth;
+using KennectComputer.Host.Config;
 using KennectComputer.Host.Control;
 using KennectComputer.Host.Ipc;
 using KennectComputer.Host.Policy;
@@ -83,7 +84,7 @@ public sealed class DispatcherTests
         var response = await dispatcher.HandleAsync(JsonDocument.Parse("""{"jsonrpc":"2.0","id":2,"method":"windows.list","params":{}}""").RootElement);
         var windows = response.GetProperty("result").GetProperty("windows");
         var window = Assert.Single(windows.EnumerateArray());
-        Assert.Equal("w_1", window.GetProperty("windowId").GetString());
+        Assert.Matches("^w_[0-9]+$", window.GetProperty("windowId").GetString());
         Assert.Equal("Notepad", window.GetProperty("title").GetString());
         Assert.Equal("Notepad", window.GetProperty("processName").GetString());
         Assert.Equal(100, window.GetProperty("pid").GetInt32());
@@ -399,6 +400,232 @@ public sealed class DispatcherTests
     }
 
     [Fact]
+    public async Task SnapshotRejectsOutOfRangeDepthAndNodeLimits()
+    {
+        var raw = NotepadRawWindow();
+        var harness = NewSelectionHarness(raw);
+        var info = harness.Registry.Register(raw);
+
+        foreach (var parameters in new[]
+        {
+            $$"""{"windowId":"{{info.WindowId}}","maxDepth":0}""",
+            $$"""{"windowId":"{{info.WindowId}}","maxDepth":-1}""",
+            $$"""{"windowId":"{{info.WindowId}}","maxDepth":101}""",
+            $$"""{"windowId":"{{info.WindowId}}","maxNodes":0}""",
+            $$"""{"windowId":"{{info.WindowId}}","maxNodes":-5}""",
+            $$"""{"windowId":"{{info.WindowId}}","maxNodes":50001}""",
+        })
+        {
+            var response = await harness.Dispatcher.HandleAsync(
+                Request("snapshot", parameters));
+
+            Assert.Equal(
+                "INVALID_REQUEST",
+                response.GetProperty("error").GetProperty("data").GetProperty("code").GetString());
+        }
+
+        Assert.Equal(0, harness.Walker.Calls);
+    }
+
+    [Fact]
+    public async Task SnapshotReturnsWindowGoneWhenTheWindowDiesDuringTheWalk()
+    {
+        var raw = NotepadRawWindow();
+        var api = new FakeWindowApi(raw);
+        var walker = new FakeUiaWalker(onWalk: hwnd => api.MarkDead(hwnd));
+        var harness = NewSelectionHarness(
+            walker,
+            new FakeWindowCapture(),
+            exclusions: null,
+            perception: null,
+            desktop: null,
+            api: api);
+        var info = harness.Registry.Register(raw);
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("snapshot", $$"""{"windowId":"{{info.WindowId}}"}"""));
+
+        Assert.Equal(
+            "WINDOW_GONE",
+            response.GetProperty("error").GetProperty("data").GetProperty("code").GetString());
+        Assert.Equal(1, harness.Walker.Calls);
+
+        // The dead ID is removed, so a retry is WINDOW_GONE without walking again.
+        var retry = await harness.Dispatcher.HandleAsync(
+            Request("snapshot", $$"""{"windowId":"{{info.WindowId}}"}"""));
+        Assert.Equal(
+            "WINDOW_GONE",
+            retry.GetProperty("error").GetProperty("data").GetProperty("code").GetString());
+        Assert.Equal(1, harness.Walker.Calls);
+    }
+
+    [Fact]
+    public async Task SnapshotOnAWindowThatBecameExcludedReturnsWindowGoneAndClearsSelection()
+    {
+        // The ID outlives the title: a Chrome window enumerated as "New Tab"
+        // navigates to banking after the ID was issued.
+        var raw = NotepadRawWindow();
+        var api = new FakeWindowApi(raw);
+        var policy = new ExclusionPolicy(
+            new AppConfig
+            {
+                Privacy = new PrivacyConfig { ExcludedTitles = ["*bank*"] },
+            });
+        var harness = NewSelectionHarness(
+            new FakeUiaWalker(),
+            new FakeWindowCapture(),
+            exclusions: policy,
+            perception: null,
+            desktop: null,
+            api: api);
+        var info = harness.Registry.Register(raw);
+
+        var selected = await harness.Dispatcher.HandleAsync(
+            Request("window.select", $$"""{"windowId":"{{info.WindowId}}"}"""));
+        Assert.True(selected.TryGetProperty("result", out _));
+        Assert.NotNull(harness.Selection.Selected);
+
+        api.Replace(raw with { Title = "Bank of America - Online Banking" });
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("snapshot", $$"""{"windowId":"{{info.WindowId}}"}"""));
+
+        Assert.Equal(
+            "WINDOW_GONE",
+            response.GetProperty("error").GetProperty("data").GetProperty("code").GetString());
+        Assert.Equal(0, harness.Walker.Calls);
+        Assert.Null(harness.Selection.Selected);
+    }
+
+    [Fact]
+    public async Task SelectingAWindowThatBecameExcludedReturnsWindowGone()
+    {
+        var raw = NotepadRawWindow();
+        var api = new FakeWindowApi(raw);
+        var policy = new ExclusionPolicy(
+            new AppConfig
+            {
+                Privacy = new PrivacyConfig { ExcludedTitles = ["*bank*"] },
+            });
+        var harness = NewSelectionHarness(
+            new FakeUiaWalker(),
+            new FakeWindowCapture(),
+            exclusions: policy,
+            perception: null,
+            desktop: null,
+            api: api);
+        var info = harness.Registry.Register(raw);
+
+        api.Replace(raw with { Title = "Bank of America - Online Banking" });
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("window.select", $$"""{"windowId":"{{info.WindowId}}"}"""));
+
+        Assert.Equal(
+            "WINDOW_GONE",
+            response.GetProperty("error").GetProperty("data").GetProperty("code").GetString());
+        Assert.Equal(0, harness.Focus.SetForegroundCalls);
+        Assert.Null(harness.Selection.Selected);
+    }
+
+    [Fact]
+    public async Task SnapshotUsesTheConfiguredPerceptionDefaults()
+    {
+        var capture = new FakeWindowCapture(SampleImages.Payload());
+        var harness = NewSelectionHarness(
+            new FakeUiaWalker(),
+            capture,
+            exclusions: null,
+            perception: new PerceptionConfig
+            {
+                MaxDepth = 3,
+                MaxNodes = 7,
+                ImageLongEdge = 640,
+                MaxImageLongEdge = 800,
+            },
+            desktop: null,
+            api: null,
+            windows: [NotepadRawWindow()]);
+        var info = harness.Registry.Register(NotepadRawWindow());
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request(
+                "snapshot",
+                $$"""{"windowId":"{{info.WindowId}}","image":true}"""));
+
+        Assert.True(response.TryGetProperty("result", out _));
+        Assert.Equal(3, harness.Walker.LastOptions?.MaxDepth);
+        Assert.Equal(7, harness.Walker.LastOptions?.MaxNodes);
+        var call = Assert.Single(capture.Calls);
+        Assert.Equal(640, call.ImageLongEdge);
+        Assert.Equal(800, call.MaxImageLongEdge);
+    }
+
+    [Fact]
+    public async Task SnapshotUsesTheConfiguredDefaultMode()
+    {
+        var harness = NewSelectionHarness(
+            new FakeUiaWalker(),
+            new FakeWindowCapture(),
+            exclusions: null,
+            perception: new PerceptionConfig { DefaultMode = "vision" },
+            desktop: null,
+            api: null,
+            windows: [NotepadRawWindow()]);
+        var info = harness.Registry.Register(NotepadRawWindow());
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("snapshot", $$"""{"windowId":"{{info.WindowId}}"}"""));
+
+        var result = response.GetProperty("result");
+        Assert.Equal(0, result.GetProperty("nodes").GetArrayLength());
+        Assert.Equal(0, harness.Walker.Calls);
+    }
+
+    [Fact]
+    public async Task ALockedDesktopFailsSnapshotAndSelectClosed()
+    {
+        var raw = NotepadRawWindow();
+        var harness = NewSelectionHarness(
+            new FakeUiaWalker(),
+            new FakeWindowCapture(),
+            exclusions: null,
+            perception: null,
+            desktop: new FakeDesktopState { Locked = true },
+            api: null,
+            windows: [raw]);
+        var info = harness.Registry.Register(raw);
+
+        foreach (var request in new[]
+        {
+            Request("snapshot", $$"""{"windowId":"{{info.WindowId}}"}"""),
+            Request("window.select", $$"""{"windowId":"{{info.WindowId}}"}"""),
+            Request("action", $$"""{"kind":"focus","windowId":"{{info.WindowId}}"}"""),
+        })
+        {
+            var response = await harness.Dispatcher.HandleAsync(request);
+
+            Assert.Equal(
+                "DESKTOP_UNAVAILABLE",
+                response.GetProperty("error").GetProperty("data").GetProperty("code").GetString());
+        }
+
+        Assert.Equal(0, harness.Walker.Calls);
+        Assert.Equal(0, harness.Focus.SetForegroundCalls);
+    }
+
+    [Fact]
+    public async Task StatusStillReportsALockedDesktop()
+    {
+        var tokens = TokenStore.CreateForTests(NewTempDir());
+        var dispatcher = NewDispatcher(tokens, new FakeDesktopState { Locked = true });
+
+        var response = await dispatcher.HandleAsync(Request("status", "{}"));
+
+        Assert.True(response.GetProperty("result").GetProperty("locked").GetBoolean());
+    }
+
+    [Fact]
     public async Task ASecondConnectionIsLockedOutUntilTheFirstReleases()
     {
         var tokens = TokenStore.CreateForTests(NewTempDir());
@@ -517,17 +744,35 @@ public sealed class DispatcherTests
         IUiaWalker walker,
         FakeWindowCapture capture,
         params RawWindow[] windows)
+        => NewSelectionHarness(
+            walker,
+            capture,
+            exclusions: null,
+            perception: null,
+            desktop: null,
+            api: null,
+            windows: windows);
+
+    private static SelectionHarness NewSelectionHarness(
+        IUiaWalker walker,
+        FakeWindowCapture capture,
+        IExclusionPolicy? exclusions,
+        PerceptionConfig? perception,
+        FakeDesktopState? desktop,
+        FakeWindowApi? api,
+        params RawWindow[] windows)
     {
         var tokens = TokenStore.CreateForTests(NewTempDir());
         tokens.Rotate();
-        var api = new FakeWindowApi(windows);
-        var registry = new WindowRegistry(api);
+        api ??= new FakeWindowApi(windows);
+        var registry = new WindowRegistry(api, exclusions);
         var focus = new FakeWin32();
-        var enumerator = new WindowEnumerator(api, registry);
+        var enumerator = new WindowEnumerator(api, registry, exclusions);
+        var selectionStore = new SelectionStore();
         var selection = new SelectionService(
             registry,
             new AllowAllAuthorization(),
-            new SelectionStore(),
+            selectionStore,
             new ForegroundService(focus),
             enumerator,
             pid => $@"C:\tests\{pid}.exe");
@@ -535,15 +780,23 @@ public sealed class DispatcherTests
         var dispatcher = new JsonRpcDispatcher(
             tokens,
             new FakeMonitorProvider(),
-            new FakeDesktopState(),
+            desktop ?? new FakeDesktopState(),
             enumerator,
             selection,
             registry,
             NewSnapshotter(walker, capture),
             new SnapshotStore(),
-            new ControlSession());
+            new ControlSession(),
+            perception);
 
-        return new SelectionHarness(dispatcher, registry, focus, fakeWalker, capture);
+        return new SelectionHarness(
+            dispatcher,
+            registry,
+            focus,
+            fakeWalker,
+            capture,
+            api,
+            selectionStore);
     }
 
     private static JsonRpcDispatcher NewDispatcher(
@@ -583,7 +836,9 @@ public sealed class DispatcherTests
         WindowRegistry Registry,
         FakeWin32 Focus,
         FakeUiaWalker Walker,
-        FakeWindowCapture Capture);
+        FakeWindowCapture Capture,
+        FakeWindowApi Api,
+        SelectionStore Selection);
 
     private static string NewTempDir()
     {

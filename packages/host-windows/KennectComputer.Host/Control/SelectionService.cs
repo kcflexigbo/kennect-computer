@@ -194,7 +194,12 @@ public sealed class SelectionService
         return SelectResult.Success(window);
     }
 
-    private void ClearIfSelected(string windowId)
+    /// <summary>
+    /// Forgets the stored selection when it points at <paramref name="windowId"/>.
+    /// A window invalidated by death or by a newly matching privacy exclusion
+    /// must never remain the session target.
+    /// </summary>
+    public void ClearIfSelected(string windowId)
     {
         var selected = _selection.Selected;
         if (selected is not null

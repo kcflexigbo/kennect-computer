@@ -1,3 +1,4 @@
+using KennectComputer.Host.Policy;
 using KennectComputer.Host.Protocol;
 
 namespace KennectComputer.Host.Windows;
@@ -26,21 +27,48 @@ public sealed class ResolvedWindow
 /// The same window keeps its ID across enumerations; a window whose native
 /// identity changed (process restart, handle reuse) is marked dead and gets a
 /// new ID. Every resolve re-checks the live native window (handle, PID, process,
-/// and class), so an ID cannot outlive the window it was issued for even when no
-/// new enumeration has run since. Dead IDs are removed and never resolve again,
-/// so a stale selection cannot drift to another window.
+/// and class) and re-applies the privacy policy to its current process and
+/// title, so an ID cannot outlive the window or become private after issue even
+/// when no new enumeration has run since. Dead IDs are removed and never resolve
+/// again, so a stale selection cannot drift to another window.
+///
+/// IDs start at a random per-run origin, so an ID handed out by an earlier host
+/// process never collides with an ID from a later one. The MCP server reconnects
+/// transparently after a host restart; a stale <c>w_&lt;counter&gt;</c> must fail
+/// instead of resolving to whatever window now holds that counter.
 /// </summary>
 public sealed class WindowRegistry
 {
+    /// <summary>
+    /// IDs reserved for one host run. The next run starts at least this far
+    /// away, so two runs cannot produce the same ID.
+    /// </summary>
+    internal const long IdSpace = 1L << 20;
+
+    private const long IdOriginRange = 1L << 42;
+
     private readonly object _gate = new();
     private readonly Dictionary<string, Entry> _byId = new(StringComparer.Ordinal);
     private readonly Dictionary<nint, Entry> _byHwnd = [];
     private readonly IWindowApi _api;
+    private readonly IExclusionPolicy? _exclusions;
+    private readonly long _idOrigin;
     private long _nextId;
 
-    public WindowRegistry(IWindowApi api)
+    public WindowRegistry(IWindowApi api, IExclusionPolicy? exclusions = null)
+        : this(api, exclusions, Random.Shared.NextInt64(IdOriginRange) * IdSpace)
+    {
+    }
+
+    /// <summary>Creates a registry with a fixed ID origin; tests use this.</summary>
+    internal WindowRegistry(
+        IWindowApi api,
+        IExclusionPolicy? exclusions,
+        long idOrigin)
     {
         _api = api ?? throw new ArgumentNullException(nameof(api));
+        _exclusions = exclusions;
+        _idOrigin = idOrigin;
     }
 
     public WindowInfo Register(RawWindow window)
@@ -62,7 +90,7 @@ public sealed class WindowRegistry
                 Invalidate(existing);
             }
 
-            var entry = new Entry($"w_{++_nextId}", window);
+            var entry = new Entry($"w_{_idOrigin + ++_nextId}", window);
             _byId[entry.WindowId] = entry;
             _byHwnd[window.Hwnd] = entry;
             return entry.ToWindowInfo();
@@ -91,6 +119,18 @@ public sealed class WindowRegistry
             var current = _api.TryGetWindow(entry.Hwnd);
             if (current is not null && entry.HasSameIdentity(current))
             {
+                // Titles change routinely (document names, unread counts,
+                // navigation), so enumeration-time exclusions are not enough:
+                // a window enumerated as "New Tab" may now show banking. The
+                // ID is invalidated rather than returned.
+                if (_exclusions is not null
+                    && _exclusions.IsExcluded(current.ProcessName, current.Title))
+                {
+                    Invalidate(entry);
+                    resolved = null;
+                    return false;
+                }
+
                 entry.Update(current);
                 resolved = entry.ToResolvedWindow();
                 return true;

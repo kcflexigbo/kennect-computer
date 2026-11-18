@@ -126,6 +126,8 @@ export class HostManager {
       session = null;
     }
 
+    const hostAlreadyRunning = session !== null;
+
     try {
       const client = await this.connect(session, this.sessionDir);
       this.client = client;
@@ -136,19 +138,24 @@ export class HostManager {
       }
     }
 
-    await this.spawnOnce();
-    await this.waitForSession();
-
-    try {
-      const client = await this.connect(this.readSession(), this.sessionDir);
+    if (hostAlreadyRunning) {
+      // The host publishes session.json before its first pipe instance exists
+      // on a cold start. It is already running, so wait for the listener
+      // instead of spawning a duplicate that would exit via single-instance.
+      const client = await this.connectUntilReady(
+        "The Kennect host published its session but did not accept a connection. Retry in a moment.",
+      );
       this.client = client;
       return client;
-    } catch (error) {
-      throw toHostError(
-        error,
-        "The Kennect host did not become available after it was started. Start it manually and retry.",
-      );
     }
+
+    await this.spawnOnce();
+
+    const client = await this.connectUntilReady(
+      "The Kennect host did not become available after it was started. Start it manually and retry.",
+    );
+    this.client = client;
+    return client;
   }
 
   /** Spawn only for absent/refused connections; auth and timeout failures are real. */
@@ -177,13 +184,24 @@ export class HostManager {
     await spawnHost(this.hostPath);
   }
 
-  private async waitForSession(): Promise<void> {
+  /**
+   * Retries `connect` until the spawn wait expires. A spawned host publishes
+   * its discovery files before the pipe accepts connections, so one connect
+   * attempt is not enough; each attempt re-reads the session because a restart
+   * rotates the token and pipe name.
+   */
+  private async connectUntilReady(unavailableMessage: string): Promise<HostConnection> {
     const deadline = Date.now() + this.spawnWaitMs;
+    let lastError: unknown;
 
-    while (Date.now() < deadline) {
-      const session = this.readSession();
-      if (session !== null && this.isProcessAlive(session.pid)) {
-        return;
+    for (;;) {
+      try {
+        return await this.connect(this.readSession(), this.sessionDir);
+      } catch (error) {
+        lastError = error;
+        if (!this.isStartupRetryable(error)) {
+          throw toHostError(error, unavailableMessage);
+        }
       }
 
       const remaining = deadline - Date.now();
@@ -193,6 +211,23 @@ export class HostManager {
 
       await this.sleep(Math.min(POLL_INTERVAL_MS, remaining));
     }
+
+    throw toHostError(
+      lastError
+        ?? new HostError(
+          "HOST_UNAVAILABLE",
+          "The Kennect host did not accept a connection.",
+        ),
+      unavailableMessage,
+    );
+  }
+
+  /** A missing pipe or a token still being rotated is transient during startup. */
+  private isStartupRetryable(error: unknown): boolean {
+    const code = errorCodeOf(error);
+    return code === undefined
+      || code === "HOST_UNAVAILABLE"
+      || code === "UNAUTHORIZED";
   }
 
   private pruneSession(): void {

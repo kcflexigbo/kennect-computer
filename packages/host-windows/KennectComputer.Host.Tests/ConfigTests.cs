@@ -1,6 +1,7 @@
 using KennectComputer.Host.Config;
 using KennectComputer.Host.Policy;
 using KennectComputer.Host.Protocol;
+using KennectComputer.Host.Uia;
 using KennectComputer.Host.Windows;
 
 namespace KennectComputer.Host.Tests;
@@ -87,10 +88,12 @@ public sealed class ConfigTests
         Assert.Equal("off", config.Control.ConsequentialGate);
         Assert.Equal(3000, config.Control.ConsequentialCountdownMs);
         Assert.Equal("both", config.Perception.DefaultMode);
-        Assert.Equal(12, config.Perception.MaxDepth);
-        Assert.Equal(1500, config.Perception.MaxNodes);
-        Assert.Equal(1568, config.Perception.ImageLongEdge);
-        Assert.Equal(2576, config.Perception.MaxImageLongEdge);
+        // The JSON defaults and the code defaults must not drift apart: the
+        // dispatcher falls back to these values when a request omits them.
+        Assert.Equal(SnapshotOptions.DefaultMaxDepth, config.Perception.MaxDepth);
+        Assert.Equal(SnapshotOptions.DefaultMaxNodes, config.Perception.MaxNodes);
+        Assert.Equal(SnapshotOptions.DefaultImageLongEdge, config.Perception.ImageLongEdge);
+        Assert.Equal(SnapshotOptions.DefaultMaxImageLongEdge, config.Perception.MaxImageLongEdge);
         Assert.Contains("KeePass.exe", config.Privacy.ExcludedProcesses);
         Assert.Contains("1Password.exe", config.Privacy.ExcludedProcesses);
         Assert.Contains("LogonUI.exe", config.Privacy.ExcludedProcesses);
@@ -100,6 +103,21 @@ public sealed class ConfigTests
         Assert.True(config.Apps["Feishu"].PreAuthorized);
         Assert.Equal("off", config.Apps["Feishu"].ConsequentialGate);
         Assert.True(config.Apps.ContainsKey("feishu"));
+    }
+
+    [Fact]
+    public void TheCompiledConfigDefaultsMatchTheSnapshotDefaults()
+    {
+        // AppConfig is also used when a user config omits a section; it must
+        // agree with SnapshotOptions, which supplies the record defaults.
+        var perception = new PerceptionConfig();
+
+        Assert.Equal(SnapshotOptions.DefaultMaxDepth, perception.MaxDepth);
+        Assert.Equal(SnapshotOptions.DefaultMaxNodes, perception.MaxNodes);
+        Assert.Equal(SnapshotOptions.DefaultImageLongEdge, perception.ImageLongEdge);
+        Assert.Equal(SnapshotOptions.DefaultMaxImageLongEdge, perception.MaxImageLongEdge);
+        Assert.Equal("both", perception.DefaultMode);
+        Assert.Equal(7, new PrivacyConfig().AuditRetentionDays);
     }
 
     [Fact]

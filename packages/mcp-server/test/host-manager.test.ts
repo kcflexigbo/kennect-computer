@@ -199,4 +199,53 @@ describe("HostManager", () => {
     expect(result).toEqual({ ok: true, data: readStatusFixture() });
     expect(fake.statusRequests).toBe(1);
   });
+
+  it("retries connecting while a live session's listener is still starting", async () => {
+    // session.json is published before the first pipe instance exists, so the
+    // first connect is refused. The manager must keep retrying that live
+    // session instead of spawning a second host that exits immediately.
+    const fake = await startFakeHost({ listenDelayMs: 150 });
+    fakes.push(fake);
+    const spawn = vi.fn();
+
+    const manager = new HostManager({
+      sessionDir: fake.dir,
+      spawn,
+      spawnWaitMs: 2_000,
+    });
+    managers.push(manager);
+
+    const host = await manager.ensureHost();
+    const result = await statusTool(host);
+
+    expect(result).toEqual({ ok: true, data: readStatusFixture() });
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it("keeps retrying the connection after a spawn until the host is ready", async () => {
+    const spawn = vi.fn().mockResolvedValue(undefined);
+    const fakeClient = createFakeClient();
+    let attempts = 0;
+
+    const manager = new HostManager({
+      spawn,
+      readSession: () => null,
+      spawnWaitMs: 1_000,
+      sleep: async (milliseconds) => new Promise<void>((resolve) => {
+        setTimeout(resolve, Math.min(milliseconds, 5));
+      }),
+      connect: async () => {
+        attempts += 1;
+        if (attempts < 3) {
+          throw new HostError("HOST_UNAVAILABLE", "The pipe was refused.");
+        }
+        return fakeClient;
+      },
+    });
+    managers.push(manager);
+
+    await expect(manager.ensureHost()).resolves.toBe(fakeClient);
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(attempts).toBe(3);
+  });
 });

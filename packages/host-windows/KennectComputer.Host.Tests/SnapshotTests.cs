@@ -374,14 +374,24 @@ internal sealed class FakeWindowCapture
 
     public List<CaptureCall> Calls { get; } = [];
 
-    public ImagePayload? Capture(nint hwnd, Rect bounds, int imageLongEdge, bool enabled)
+    public ImagePayload? Capture(
+        nint hwnd,
+        Rect bounds,
+        int imageLongEdge,
+        bool enabled,
+        int maxImageLongEdge)
     {
-        Calls.Add(new CaptureCall(hwnd, bounds, imageLongEdge, enabled));
+        Calls.Add(new CaptureCall(hwnd, bounds, imageLongEdge, enabled, maxImageLongEdge));
         return enabled ? _payload : null;
     }
 }
 
-internal sealed record CaptureCall(nint Hwnd, Rect Bounds, int ImageLongEdge, bool Enabled);
+internal sealed record CaptureCall(
+    nint Hwnd,
+    Rect Bounds,
+    int ImageLongEdge,
+    bool Enabled,
+    int MaxImageLongEdge);
 
 internal static class SampleImages
 {
@@ -533,15 +543,23 @@ internal sealed class FakeUiaWalker : IUiaWalker
     private readonly TreeModel? _tree;
     private readonly bool _emptyFirst;
     private readonly bool _alwaysEmpty;
+    private readonly Action<nint>? _onWalk;
 
-    public FakeUiaWalker(TreeModel? tree = null, bool emptyFirst = false, bool alwaysEmpty = false)
+    public FakeUiaWalker(
+        TreeModel? tree = null,
+        bool emptyFirst = false,
+        bool alwaysEmpty = false,
+        Action<nint>? onWalk = null)
     {
         _tree = tree;
         _emptyFirst = emptyFirst;
         _alwaysEmpty = alwaysEmpty;
+        _onWalk = onWalk;
     }
 
     public int Calls { get; private set; }
+
+    public SnapshotOptions? LastOptions { get; private set; }
 
     public TreeModel? Walk(
         nint hwnd,
@@ -549,6 +567,8 @@ internal sealed class FakeUiaWalker : IUiaWalker
         CancellationToken cancellationToken)
     {
         Calls++;
+        LastOptions = options;
+        _onWalk?.Invoke(hwnd);
 
         if (_alwaysEmpty)
         {

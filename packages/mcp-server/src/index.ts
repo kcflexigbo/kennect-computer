@@ -6,8 +6,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 
 import { AuditLog, type AuditSink } from "./audit/log.js";
 import {
-  AUDIT_RETENTION_DAYS,
   defaultAuditDir,
+  resolveAuditRetentionDays,
   SERVER_NAME,
   SERVER_VERSION,
 } from "./config.js";
@@ -57,7 +57,8 @@ async function main(): Promise<void> {
   const manager = new HostManager();
   const audit = new AuditLog({
     dir: defaultAuditDir(),
-    retentionDays: AUDIT_RETENTION_DAYS,
+    // The same config the host reads, including the per-user overlay.
+    retentionDays: resolveAuditRetentionDays(),
   });
   const server = createMcpServer(manager, { audit });
   const transport = new StdioServerTransport();

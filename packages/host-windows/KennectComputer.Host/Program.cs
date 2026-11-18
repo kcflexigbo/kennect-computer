@@ -43,8 +43,11 @@ internal static class Program
         var control = new ControlSession();
 
         var windowApi = new WindowApi();
-        var registry = new WindowRegistry(windowApi);
         var exclusions = new ExclusionPolicy(config);
+        // Resolves re-apply the exclusion policy against the live title, so a
+        // window that navigates to private content after enumeration loses
+        // its ID instead of being captured.
+        var registry = new WindowRegistry(windowApi, exclusions);
         var windows = new WindowEnumerator(windowApi, registry, exclusions);
 
         // The tray and the stop hotkey run on a dedicated STA thread; the pipe
@@ -86,7 +89,8 @@ internal static class Program
             registry,
             new UiaSnapshotter(new WindowsUiaWalker()),
             new SnapshotStore(),
-            control);
+            control,
+            config.Perception);
         var server = new PipeServer(pipeName, tokens, dispatcher);
 
         Console.CancelKeyPress += (_, eventArgs) =>

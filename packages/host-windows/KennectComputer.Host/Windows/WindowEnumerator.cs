@@ -5,9 +5,9 @@ namespace KennectComputer.Host.Windows;
 
 /// <summary>
 /// Lists user-facing top-level windows. Invisible, DWM-cloaked, tool, and
-/// untitled windows are filtered out, as are windows excluded by the privacy
-/// policy, before an opaque ID is assigned, so they can never be returned or
-/// selected through a stale ID.
+/// untitled windows are filtered out, as are the host's own windows and
+/// windows excluded by the privacy policy, before an opaque ID is assigned, so
+/// they can never be returned or selected through a stale ID.
 /// </summary>
 public sealed class WindowEnumerator
 {
@@ -56,5 +56,9 @@ public sealed class WindowEnumerator
             && !window.Cloaked
             && (window.ExStyle & WsExToolWindow) == 0
             && !string.IsNullOrWhiteSpace(window.Title)
-            && !string.IsNullOrWhiteSpace(window.ProcessName);
+            && !string.IsNullOrWhiteSpace(window.ProcessName)
+            // The per-app authorization dialog is a normal titled, visible
+            // window owned by the host. DESIGN §8 hard rule 3 excludes the
+            // host's own dialogs unconditionally, not just by config.
+            && window.Pid != Environment.ProcessId;
 }

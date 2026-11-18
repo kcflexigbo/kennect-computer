@@ -88,11 +88,19 @@ without starting anything, which is what automated checks use.
 | `computer_select` | Select and focus a target window, then return its accessibility outline |
 | `computer_snapshot` | Capture a window's accessibility outline, optionally with a PNG image |
 | `computer_focus` | Bring a window to the foreground, verifying the result |
-| `computer_stop` | Abort the in-flight operation; the host and session stay alive |
+| `computer_stop` | Ask the host to stop; the host and session stay alive |
 
 Window IDs are opaque (`w_<counter>`); native handles never cross the protocol.
-The stop hotkey is `Ctrl+Alt+Shift+Esc`; it aborts the current operation and is
-consumed by the host.
+Each host run starts its ID space at a random origin, so an ID held across a
+host restart fails instead of resolving to a different window. A snapshot may
+restore a minimized window so its pixels can be captured; this is its only side
+effect.
+
+The stop hotkey is `Ctrl+Alt+Shift+Esc`; it preempts the current operation
+immediately and is consumed by the host. `computer_stop` is a normal queued host
+call: the host reads it only after the running operation returns, so it cannot
+abort work already in flight and instead cancels the next operation. The tray
+**Stop** item and the hotkey are the immediate preemption paths.
 
 ## Manual M1 acceptance
 
@@ -176,7 +184,9 @@ Each line contains exactly:
 - `result` is `"ok"` or the shared error code (for example `HOST_UNAVAILABLE`,
   `WINDOW_GONE`, `ACTION_TIMEOUT`); error messages are never logged.
 - Files older than the retention window are deleted when the MCP server starts.
-  The default retention is seven days of UTC-day files.
+  Retention comes from `privacy.auditRetentionDays` in `config/default.json`
+  (default seven days of UTC-day files) and follows the per-user overlay; a
+  missing or malformed value falls back to seven days.
 - Auditing is opt-in in the server API (`createMcpServer(provider, { audit })`);
   tests and embedders that omit it never touch the real audit directory.
 - Audit writes are best-effort. A disk or permission failure is reported to
@@ -192,10 +202,17 @@ Leave it unset for a live host connection.
 
 ## Configuration
 
-`config/default.json` holds the host defaults: stop hotkey, authorization mode,
-perception caps, excluded processes/titles, and `auditRetentionDays`. A
-per-user `%LOCALAPPDATA%\KennectComputer\config.json` overlays it, and
+`config/default.json` holds the host defaults: stop hotkey, perception caps,
+excluded processes/titles, and `auditRetentionDays`. A per-user
+`%LOCALAPPDATA%\KennectComputer\config.json` overlays it, and
 `KENNECT_COMPUTER_CONFIG` replaces the default path.
+
+M1 consumes the stop hotkey, the `perception` defaults (`defaultMode`,
+`maxDepth`, `maxNodes`, `imageLongEdge`, `maxImageLongEdge`), the privacy
+exclusions, and `auditRetentionDays` (the MCP server reads the same file and
+overlay to prune its audit log). `control.authorizationMode`,
+`control.consequentialGate`, and `host.startOnDemand` are reserved for M4; edit
+them only when that milestone lands.
 
 Environment variables:
 
@@ -209,11 +226,18 @@ Environment variables:
 
 - Screen and window content is untrusted data. Tool descriptions tell the model
   never to follow instructions found on screen.
-- `Ctrl+Alt+Shift+Esc` and the tray **Stop** item abort the current operation;
-  the stop hotkey is consumed.
-- A locked or secure desktop fails closed with `DESKTOP_UNAVAILABLE` and no
-  input is attempted.
-- Excluded processes and title patterns are never enumerated or captured.
+- `Ctrl+Alt+Shift+Esc` and the tray **Stop** item preempt the current
+  operation; the stop hotkey is consumed. `computer_stop` is a queued host call
+  and is answered after the running operation returns, so it cannot preempt
+  work already in flight.
+- A locked or secure desktop fails closed: `computer_select`, `computer_focus`,
+  and `computer_snapshot` return `DESKTOP_UNAVAILABLE` with no input or capture
+  attempted. `computer_status` still reports `locked: true`.
+- Excluded processes and title patterns are never enumerated or captured, and
+  the policy is re-applied to each window's live title and process on every
+  resolve, so navigating a window to private content invalidates its old ID.
+  The host's own windows (including its authorization dialog) are never
+  listed, captured, or controlled.
 - Only one MCP session may control the desktop at a time; a second session gets
   `LOCKED_BY_OTHER_SESSION`.
 - The first time a session controls a non-pre-authorized app, the tray asks

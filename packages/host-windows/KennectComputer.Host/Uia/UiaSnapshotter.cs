@@ -22,7 +22,8 @@ public delegate ImagePayload? WindowCapture(
     nint hwnd,
     Rect bounds,
     int imageLongEdge,
-    bool enabled);
+    bool enabled,
+    int maxImageLongEdge);
 
 /// <summary>A snapshot plus the node map needed to act on its node IDs later.</summary>
 public sealed record SnapshotCapture(
@@ -173,7 +174,14 @@ public sealed class UiaSnapshotter
     /// snapshot and its warning are unaffected.
     /// </summary>
     private ImagePayload? CaptureImage(nint hwnd, Rect bounds, SnapshotOptions options)
-        => options.Image ? _captureImage(hwnd, bounds, options.ImageLongEdge, enabled: true) : null;
+        => options.Image
+            ? _captureImage(
+                hwnd,
+                bounds,
+                options.ImageLongEdge,
+                enabled: true,
+                options.MaxImageLongEdge)
+            : null;
 
     private static bool AnyVisibleModal(TreeModel node)
         => (!node.Offscreen && node.IsModal) || node.Children.Any(AnyVisibleModal);

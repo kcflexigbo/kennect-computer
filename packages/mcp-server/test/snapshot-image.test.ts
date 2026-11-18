@@ -128,10 +128,30 @@ describe("computer_snapshot image content", () => {
       data: imagePayload.data,
       mimeType: "image/png",
     });
+
+    // The structured envelope keeps the image metadata but not the binary:
+    // the image content block is the single copy of the PNG bytes.
     expect(result.structuredContent).toEqual({
       ok: true,
-      data: { snapshot: { ...notepadSnapshot, image: imagePayload } },
+      data: {
+        snapshot: {
+          ...notepadSnapshot,
+          image: {
+            mimeType: imagePayload.mimeType,
+            scale: imagePayload.scale,
+            sourceBounds: imagePayload.sourceBounds,
+            byteLength: Buffer.from(imagePayload.data, "base64").length,
+          },
+        },
+      },
     });
+    const structuredImage = (
+      result.structuredContent as {
+        data: { snapshot: { image: Record<string, unknown> } };
+      }
+    ).data.snapshot.image;
+    expect(structuredImage).not.toHaveProperty("data");
+    expect(JSON.stringify(result.structuredContent)).not.toContain(imagePayload.data);
   });
 
   it("emits text only when the snapshot has no image", async () => {
