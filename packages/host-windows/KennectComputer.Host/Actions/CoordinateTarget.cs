@@ -64,10 +64,50 @@ internal static class CoordinateTarget
                 $"The {actionName} coordinates could not be mapped.");
     }
 
+    /// <summary>
+    /// The live element's bounds center, verified to be a point the action may
+    /// safely click or wheel at. An element with no on-screen area, or whose
+    /// center lies outside the verified-foreground window, is
+    /// <c>STALE_SNAPSHOT</c>: acting there could hit another window. This is the
+    /// node fallback's equivalent of the coordinate path's containment check.
+    /// </summary>
+    public static Input.Point ResolveNodeCenter(IUiaNode node, WindowInfo window, string actionName)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+        ArgumentNullException.ThrowIfNull(window);
+        ArgumentException.ThrowIfNullOrEmpty(actionName);
+
+        var bounds = node.Bounds;
+        if (bounds.Width <= 0 || bounds.Height <= 0)
+        {
+            throw new ActionFailedException(
+                ErrorCode.StaleSnapshot,
+                $"The {actionName} target has no on-screen bounds; take a new snapshot.");
+        }
+
+        var center = BoundsCenter(bounds);
+        if (!Contains(window.Bounds, center))
+        {
+            throw new ActionFailedException(
+                ErrorCode.StaleSnapshot,
+                $"The {actionName} target is not inside the selected window; "
+                + "take a new snapshot.");
+        }
+
+        return center;
+    }
+
     /// <summary>The live element's bounds center in physical screen pixels.</summary>
-    public static Input.Point BoundsCenter(Rect bounds) => new(
+    private static Input.Point BoundsCenter(Rect bounds) => new(
         bounds.X + (bounds.Width / 2),
         bounds.Y + (bounds.Height / 2));
+
+    // Half-open in whole pixels, matching CoordinateMapper's window check.
+    private static bool Contains(Rect bounds, Input.Point point)
+        => point.X >= bounds.X
+            && point.X < bounds.X + bounds.Width
+            && point.Y >= bounds.Y
+            && point.Y < bounds.Y + bounds.Height;
 
     private static string CoordinateErrorMessage(ErrorCode error, string actionName) => error switch
     {

@@ -131,8 +131,9 @@ public sealed class ScrollAction
                 cancellationToken)
             .ConfigureAwait(false);
 
-        // Aim at where the element is now, not where the snapshot captured it.
-        var center = CoordinateTarget.BoundsCenter(live.Bounds);
+        // Aim at where the element is now, not where the snapshot captured it,
+        // and only at a real on-screen point inside the selected window.
+        var center = CoordinateTarget.ResolveNodeCenter(live, window.Info, "scroll");
         cancellationToken.ThrowIfCancellationRequested();
         _input.MoveTo(center.X, center.Y);
         cancellationToken.ThrowIfCancellationRequested();

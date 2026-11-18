@@ -43,10 +43,44 @@ public sealed class ScrollActionTests
         Assert.True(result.NeedsObservation);
         Assert.Equal(harness.SelectedWindow.WindowId, result.Window.WindowId);
 
-        // The captured list is 120x32 at (10, 20): its live center is (70, 36).
-        Assert.Equal([(70, 36)], harness.Input.Moves);
+        // The captured list is 120x32 at (110, 70): its live center is (170, 86).
+        Assert.Equal([(170, 86)], harness.Input.Moves);
         Assert.Equal([(-360, false)], harness.Input.Scrolls);
         Assert.Equal(1, harness.Foreground.SetForegroundCalls);
+    }
+
+    [Fact]
+    public async Task ANodeWithEmptyBoundsReturnsStaleSnapshotAndSendsNoInput()
+    {
+        var target = List() with { Bounds = new Rect(110, 70, 0, 0) };
+        var live = FakeUiaNode.From(target);
+        var harness = Harness.Create(new FakeUiaNodeResolver(live));
+        harness.SaveNode("n1:1", target);
+
+        var failure = await Assert.ThrowsAsync<ActionFailedException>(() =>
+            harness.Action.ExecuteAsync(
+                new ScrollRequest { NodeId = "n1:1", Direction = ScrollDirection.Down },
+                CancellationToken.None));
+
+        Assert.Equal(ErrorCode.StaleSnapshot, failure.Code);
+        Assert.Empty(harness.Input.Calls);
+    }
+
+    [Fact]
+    public async Task ANodeCenterOutsideTheWindowReturnsStaleSnapshotAndSendsNoInput()
+    {
+        var target = List() with { Bounds = new Rect(5000, 5000, 120, 32) };
+        var live = FakeUiaNode.From(target);
+        var harness = Harness.Create(new FakeUiaNodeResolver(live));
+        harness.SaveNode("n1:1", target);
+
+        var failure = await Assert.ThrowsAsync<ActionFailedException>(() =>
+            harness.Action.ExecuteAsync(
+                new ScrollRequest { NodeId = "n1:1", Direction = ScrollDirection.Down },
+                CancellationToken.None));
+
+        Assert.Equal(ErrorCode.StaleSnapshot, failure.Code);
+        Assert.Empty(harness.Input.Calls);
     }
 
     [Fact]
@@ -303,7 +337,7 @@ public sealed class ScrollActionTests
         Role = "list",
         Name = "Messages",
         Identifier = "messages",
-        Bounds = new Rect(10, 20, 120, 32),
+        Bounds = new Rect(110, 70, 120, 32),
     };
 
     /// <summary>

@@ -80,9 +80,57 @@ public sealed class ClickActionTests
             ["TryInvoke", "TryToggle", "TrySelect", "TryExpand"],
             live.Calls);
 
-        // The captured button is 120x32 at (10, 20): its center is (70, 36).
-        Assert.Equal([(70, 36)], harness.Input.Moves);
+        // The captured button is 120x32 at (110, 70): its center is (170, 86).
+        Assert.Equal([(170, 86)], harness.Input.Moves);
         Assert.Equal([(MouseButton.Right, 2)], harness.Input.Clicks);
+    }
+
+    [Fact]
+    public async Task ANodeWithEmptyBoundsReturnsStaleSnapshotAndSendsNoInput()
+    {
+        var target = Button() with { Bounds = new Rect(110, 70, 0, 0) };
+        var live = FakeUiaNode.From(target) with
+        {
+            SupportsInvoke = false,
+            SupportsToggle = false,
+            SupportsSelect = false,
+            SupportsExpand = false,
+        };
+        var harness = Harness.Create(new FakeUiaNodeResolver(live));
+        harness.SaveNode("n1:1", target);
+
+        var failure = await Assert.ThrowsAsync<ActionFailedException>(() =>
+            harness.Action.ExecuteAsync(
+                new ClickRequest { NodeId = "n1:1" },
+                CancellationToken.None));
+
+        Assert.Equal(ErrorCode.StaleSnapshot, failure.Code);
+        Assert.Empty(harness.Input.Calls);
+    }
+
+    [Fact]
+    public async Task ANodeCenterOutsideTheWindowReturnsStaleSnapshotAndSendsNoInput()
+    {
+        // The live element matches its fingerprint but sits over another
+        // window; a bounds-center click there would hit the wrong app.
+        var target = Button() with { Bounds = new Rect(5000, 5000, 120, 32) };
+        var live = FakeUiaNode.From(target) with
+        {
+            SupportsInvoke = false,
+            SupportsToggle = false,
+            SupportsSelect = false,
+            SupportsExpand = false,
+        };
+        var harness = Harness.Create(new FakeUiaNodeResolver(live));
+        harness.SaveNode("n1:1", target);
+
+        var failure = await Assert.ThrowsAsync<ActionFailedException>(() =>
+            harness.Action.ExecuteAsync(
+                new ClickRequest { NodeId = "n1:1" },
+                CancellationToken.None));
+
+        Assert.Equal(ErrorCode.StaleSnapshot, failure.Code);
+        Assert.Empty(harness.Input.Calls);
     }
 
     [Fact]
@@ -346,7 +394,7 @@ public sealed class ClickActionTests
         Role = "button",
         Name = "Send",
         Identifier = "send",
-        Bounds = new Rect(10, 20, 120, 32),
+        Bounds = new Rect(110, 70, 120, 32),
         Actions = ["press"],
     };
 

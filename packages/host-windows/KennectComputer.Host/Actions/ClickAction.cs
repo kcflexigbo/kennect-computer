@@ -113,8 +113,9 @@ public sealed class ClickAction
         }
 
         // No pattern was available; click the element's current physical
-        // bounds center instead of the bounds captured in the snapshot.
-        var center = CoordinateTarget.BoundsCenter(live.Bounds);
+        // bounds center instead of the bounds captured in the snapshot. The
+        // center must be a real on-screen point inside the selected window.
+        var center = CoordinateTarget.ResolveNodeCenter(live, window.Info, "click");
         cancellationToken.ThrowIfCancellationRequested();
         _input.MoveTo(center.X, center.Y);
         cancellationToken.ThrowIfCancellationRequested();
