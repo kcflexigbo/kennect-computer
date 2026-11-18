@@ -25,6 +25,9 @@ export const TOKEN_FILE_NAME = "session.token";
 export const HOST_PATH_ENV = "KENNECT_HOST_PATH";
 export const SESSION_DIR_ENV = "KENNECT_COMPUTER_SESSION_DIR";
 
+/** DESIGN §14: seven days of metadata-only audit retention by default. */
+export const AUDIT_RETENTION_DAYS = 7;
+
 /** The version is single-sourced from this package's `package.json`. */
 export const SERVER_VERSION = readServerVersion();
 
@@ -51,6 +54,15 @@ export function defaultSessionDir(options: SessionDirOptions = {}): string {
   }
 
   return path.join(home, "Library", "Application Support", "KennectComputer");
+}
+
+/**
+ * Resolves the audit log directory: `<user data dir>/audit` on Windows and
+ * macOS (DESIGN §14). It follows `KENNECT_COMPUTER_SESSION_DIR` so tests and
+ * development runs stay inside their isolated data directory.
+ */
+export function defaultAuditDir(options: SessionDirOptions = {}): string {
+  return path.join(defaultSessionDir(options), "audit");
 }
 
 function readServerVersion(): string {

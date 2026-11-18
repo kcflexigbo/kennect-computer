@@ -12,6 +12,7 @@ spikes/**/obj/
 node_modules/
 dist/
 .mcp.json
+.mcp.json.bak*
 
 # .NET build output
 bin/

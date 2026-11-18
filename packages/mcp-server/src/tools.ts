@@ -10,6 +10,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
+import type { AuditEntryInput, AuditSink } from "./audit/log.js";
 import { failureFromError, type ToolResult } from "./tool-result.js";
 import { focusTool, type FocusArgs } from "./tools/focus.js";
 import { selectTool, type SelectArgs } from "./tools/select.js";
@@ -21,6 +22,12 @@ import { windowsTool } from "./tools/windows.js";
 /** The manager surface the MCP layer depends on. */
 export interface HostProvider {
   ensureHost(): Promise<HostRequester>;
+}
+
+/** Opt-in audit wiring (R37): no sink means no audit writes at all. */
+export interface AuditContext {
+  audit: AuditSink;
+  sessionId: string;
 }
 
 export const SERVER_INSTRUCTIONS = `Kennect Computer controls the local desktop through a background host.
@@ -51,8 +58,15 @@ export function toCallToolResult<T>(result: ToolResult<T>): CallToolResult {
   };
 }
 
-/** Registers the M1 tools on the SDK's low-level server. */
-export function registerComputerTools(server: Server, provider: HostProvider): void {
+/**
+ * Registers the M1 tools on the SDK's low-level server. When `audit` is
+ * supplied, every validated tool call writes exactly one audit entry.
+ */
+export function registerComputerTools(
+  server: Server,
+  provider: HostProvider,
+  audit?: AuditContext,
+): void {
   const tools: ToolDefinition[] = [
     createStatusDefinition(provider),
     createWindowsDefinition(provider),
@@ -91,8 +105,78 @@ export function registerComputerTools(server: Server, provider: HostProvider): v
       );
     }
 
-    return tool.handler(parsed.data);
+    return runTool(tool, parsed.data, audit);
   });
+}
+
+/**
+ * Runs a validated tool handler and audits the outcome in a `finally`, so
+ * failures are recorded too. The entry carries only target identifiers and the
+ * result code (R38) — never a title, message, text, or snapshot content.
+ * Auditing is best-effort and can never fail the tool call.
+ */
+async function runTool(
+  tool: ToolDefinition,
+  args: unknown,
+  audit: AuditContext | undefined,
+): Promise<CallToolResult> {
+  const startedAt = Date.now();
+  let result: CallToolResult | undefined;
+
+  try {
+    result = await tool.handler(args);
+    return result;
+  } finally {
+    if (audit !== undefined) {
+      const entry: AuditEntryInput = {
+        sessionId: audit.sessionId,
+        tool: tool.name,
+        ...auditTarget(args),
+        result: auditResultCode(result),
+        durationMs: Math.max(0, Date.now() - startedAt),
+      };
+
+      try {
+        audit.audit.write(entry);
+      } catch (error) {
+        // stdio owns stdout; diagnostics go to stderr only, and auditing never
+        // fails the call (R38).
+        console.error("kennect-computer audit write failed:", error);
+      }
+    }
+  }
+}
+
+/** Copies only the opaque target identifiers; title and message text are excluded. */
+function auditTarget(
+  args: unknown,
+): Pick<AuditEntryInput, "windowId" | "process" | "nodeId"> {
+  const target: Pick<AuditEntryInput, "windowId" | "process" | "nodeId"> = {};
+
+  if (args === null || typeof args !== "object") {
+    return target;
+  }
+
+  const record = args as Record<string, unknown>;
+  for (const key of ["windowId", "process", "nodeId"] as const) {
+    const value = record[key];
+    if (typeof value === "string" && value.length > 0) {
+      target[key] = value;
+    }
+  }
+
+  return target;
+}
+
+/** The audit result is `"ok"` or the shared error code; never the message (R38). */
+function auditResultCode(result: CallToolResult | undefined): string {
+  const structured = result?.structuredContent;
+  if (structured?.ok === true) {
+    return "ok";
+  }
+
+  const code = structured?.code;
+  return typeof code === "string" && code.length > 0 ? code : "HOST_UNAVAILABLE";
 }
 
 function createWindowsDefinition(provider: HostProvider): ToolDefinition {

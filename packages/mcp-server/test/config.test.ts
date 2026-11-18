@@ -4,7 +4,9 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  AUDIT_RETENTION_DAYS,
   CONNECT_TIMEOUT_MS,
+  defaultAuditDir,
   defaultSessionDir,
   HELLO_TIMEOUT_MS,
   HOST_REQUEST_TIMEOUT_MS,
@@ -43,5 +45,23 @@ describe("config", () => {
     expect(defaultSessionDir({ platform: "darwin", env: {} })).toContain(
       "KennectComputer",
     );
+  });
+
+  it("places the audit directory under the user data directory", () => {
+    expect(defaultAuditDir({ env: { KENNECT_COMPUTER_SESSION_DIR: "C:\\custom" } })).toBe(
+      path.resolve("C:\\custom", "audit"),
+    );
+
+    expect(defaultAuditDir({ platform: "win32", env: { LOCALAPPDATA: "C:\\Users\\test\\AppData\\Local" } })).toBe(
+      path.join("C:\\Users\\test\\AppData\\Local", "KennectComputer", "audit"),
+    );
+
+    expect(defaultAuditDir({ platform: "darwin", env: {}, home: "/Users/test" })).toBe(
+      path.join("/Users/test", "Library", "Application Support", "KennectComputer", "audit"),
+    );
+  });
+
+  it("retains seven days of audit entries by default", () => {
+    expect(AUDIT_RETENTION_DAYS).toBe(7);
   });
 });
