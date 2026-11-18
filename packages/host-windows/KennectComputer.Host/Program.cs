@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 
+using KennectComputer.Host.Actions;
 using KennectComputer.Host.Auth;
 using KennectComputer.Host.Config;
 using KennectComputer.Host.Control;
@@ -74,12 +75,54 @@ internal static class Program
                 config,
                 new WinFormsAuthorizationPrompt(work => tray.InvokeAsync(work)));
 
+        // One foreground seam, walker, snapshotter, and selection store serve
+        // both the M1 methods and every M2 action service, so focus, snapshot
+        // generations, and node IDs stay consistent across the milestone.
+        var foregroundApi = new WindowsForegroundApi();
+        var foreground = new ForegroundService(foregroundApi);
+        var selectionStore = new SelectionStore();
         var selection = new SelectionService(
             registry,
             authorization,
-            new SelectionStore(),
-            new ForegroundService(new WindowsForegroundApi()),
+            selectionStore,
+            foreground,
             windows);
+        var walker = new WindowsUiaWalker();
+        var snapshotter = new UiaSnapshotter(walker);
+        var snapshots = new SnapshotStore();
+        var preflight = new ActionPreflight(
+            foreground,
+            selectionStore,
+            registry,
+            new ExpectEvaluator(walker, foregroundApi));
+        var resolver = new WindowsUiaNodeResolver();
+        var input = new WindowsInputSender(new SendInputApi());
+        var clipboard = new WindowsClipboard();
+
+        var click = new ClickAction(resolver, preflight, input, snapshots);
+        var type = new TypeAction(resolver, preflight, input, clipboard, snapshots);
+        var key = new KeyAction(preflight, input);
+        var scroll = new ScrollAction(resolver, preflight, input, snapshots);
+        var wait = new WaitAction(
+            walker,
+            windows,
+            selectionStore,
+            registry,
+            SystemWaitClock.Instance);
+        var readText = new ReadTextAction(resolver, snapshots, selectionStore, registry);
+        var find = new FindAction(walker, snapshotter, snapshots, selectionStore, registry);
+        var batch = new BatchAction(
+            click,
+            type,
+            key,
+            scroll,
+            wait,
+            readText,
+            snapshotter,
+            snapshots,
+            selectionStore,
+            registry);
+
         var dispatcher = new JsonRpcDispatcher(
             tokens,
             new WindowsMonitorProvider(),
@@ -87,9 +130,17 @@ internal static class Program
             windows,
             selection,
             registry,
-            new UiaSnapshotter(new WindowsUiaWalker()),
-            new SnapshotStore(),
+            snapshotter,
+            snapshots,
             control,
+            click,
+            type,
+            key,
+            scroll,
+            wait,
+            readText,
+            find,
+            batch,
             config.Perception);
         var server = new PipeServer(pipeName, tokens, dispatcher);
 

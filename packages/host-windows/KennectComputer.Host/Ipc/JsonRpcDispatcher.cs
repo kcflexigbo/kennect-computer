@@ -1,9 +1,11 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
+using KennectComputer.Host.Actions;
 using KennectComputer.Host.Auth;
 using KennectComputer.Host.Config;
 using KennectComputer.Host.Control;
+using KennectComputer.Host.Input;
 using KennectComputer.Host.Protocol;
 using KennectComputer.Host.Uia;
 using KennectComputer.Host.Windows;
@@ -36,6 +38,14 @@ public sealed class JsonRpcDispatcher
     private readonly UiaSnapshotter _snapshotter;
     private readonly SnapshotStore _snapshots;
     private readonly ControlSession _control;
+    private readonly ClickAction _click;
+    private readonly TypeAction _type;
+    private readonly KeyAction _key;
+    private readonly ScrollAction _scroll;
+    private readonly WaitAction _wait;
+    private readonly ReadTextAction _readText;
+    private readonly FindAction _find;
+    private readonly BatchAction _batch;
     private readonly int _defaultMaxDepth;
     private readonly int _defaultMaxNodes;
     private readonly int _defaultImageLongEdge;
@@ -52,6 +62,14 @@ public sealed class JsonRpcDispatcher
         UiaSnapshotter snapshotter,
         SnapshotStore snapshots,
         ControlSession control,
+        ClickAction click,
+        TypeAction type,
+        KeyAction key,
+        ScrollAction scroll,
+        WaitAction wait,
+        ReadTextAction readText,
+        FindAction find,
+        BatchAction batch,
         PerceptionConfig? perception = null)
     {
         _tokens = tokens ?? throw new ArgumentNullException(nameof(tokens));
@@ -63,6 +81,14 @@ public sealed class JsonRpcDispatcher
         _snapshotter = snapshotter ?? throw new ArgumentNullException(nameof(snapshotter));
         _snapshots = snapshots ?? throw new ArgumentNullException(nameof(snapshots));
         _control = control ?? throw new ArgumentNullException(nameof(control));
+        _click = click ?? throw new ArgumentNullException(nameof(click));
+        _type = type ?? throw new ArgumentNullException(nameof(type));
+        _key = key ?? throw new ArgumentNullException(nameof(key));
+        _scroll = scroll ?? throw new ArgumentNullException(nameof(scroll));
+        _wait = wait ?? throw new ArgumentNullException(nameof(wait));
+        _readText = readText ?? throw new ArgumentNullException(nameof(readText));
+        _find = find ?? throw new ArgumentNullException(nameof(find));
+        _batch = batch ?? throw new ArgumentNullException(nameof(batch));
 
         // Perception settings are host defaults: a request may tighten them,
         // but a per-user config change must change behavior. The protocol's
@@ -111,6 +137,16 @@ public sealed class JsonRpcDispatcher
                 ActionErrorCode,
                 "The operation was stopped.",
                 "ACTION_TIMEOUT");
+        }
+        catch (ActionFailedException failure)
+        {
+            // Actions signal failures with their protocol code; the failed
+            // expect predicate (when any) is named in the message (R11).
+            return Error(
+                ReadRequestId(request),
+                RpcCodeFor(failure.Code),
+                ActionFailureMessage(failure),
+                failure.Code.ToProtocolCode());
         }
         catch (Exception exception)
         {
@@ -173,6 +209,10 @@ public sealed class JsonRpcDispatcher
             "window.select" => await HandleWindowSelectAsync(id, request).ConfigureAwait(false),
             "snapshot" => HandleSnapshot(id, request),
             "action" => await HandleActionAsync(id, request).ConfigureAwait(false),
+            "action.batch" => await HandleBatchAsync(id, request).ConfigureAwait(false),
+            "find" => await HandleFindAsync(id, request).ConfigureAwait(false),
+            "wait" => await HandleWaitAsync(id, request).ConfigureAwait(false),
+            "read_text" => await HandleReadTextAsync(id, request).ConfigureAwait(false),
             "stop" => HandleStop(id),
             var method => Error(id, MethodNotFoundCode, $"Method not found: {method}", "METHOD_NOT_FOUND"),
         };
@@ -478,28 +518,63 @@ public sealed class JsonRpcDispatcher
 
     private async Task<JsonElement> HandleActionAsync(JsonNode? id, JsonElement request)
     {
-        if (!request.TryGetProperty("params", out var parameters)
-            || parameters.ValueKind != JsonValueKind.Object)
+        if (!TryReadParams(request, out var parameters))
         {
             return Error(id, InvalidRequestCode, "action params must be an object.", "INVALID_REQUEST");
         }
 
-        if (!parameters.TryGetProperty("kind", out var kindElement)
-            || kindElement.ValueKind != JsonValueKind.String)
-        {
-            return Error(id, InvalidRequestCode, "action kind is required.", "INVALID_REQUEST");
-        }
+        // Parsing happens before any desktop check or service call, so a
+        // malformed request can never reach input (R9).
+        var kind = ReadRequiredString(parameters, "kind");
 
-        var kind = kindElement.GetString();
-        if (!string.Equals(kind, "focus", StringComparison.Ordinal))
+        switch (kind)
         {
-            return Error(
-                id,
-                InvalidRequestCode,
-                $"Unsupported action kind: {kind}. Only \"focus\" is available in this milestone.",
-                "INVALID_REQUEST");
-        }
+            case "focus":
+                return await HandleFocusActionAsync(id, parameters).ConfigureAwait(false);
 
+            case "click":
+            {
+                var clickRequest = ParseClickRequest(parameters);
+                return await ExecuteActionAsync(
+                    id,
+                    token => _click.ExecuteAsync(clickRequest, token)).ConfigureAwait(false);
+            }
+
+            case "type":
+            {
+                var typeRequest = ParseTypeRequest(parameters);
+                return await ExecuteActionAsync(
+                    id,
+                    token => _type.ExecuteAsync(typeRequest, token)).ConfigureAwait(false);
+            }
+
+            case "key":
+            {
+                var keyRequest = ParseKeyRequest(parameters);
+                return await ExecuteActionAsync(
+                    id,
+                    token => _key.ExecuteAsync(keyRequest, token)).ConfigureAwait(false);
+            }
+
+            case "scroll":
+            {
+                var scrollRequest = ParseScrollRequest(parameters);
+                return await ExecuteActionAsync(
+                    id,
+                    token => _scroll.ExecuteAsync(scrollRequest, token)).ConfigureAwait(false);
+            }
+
+            default:
+                throw Invalid($"Unsupported action kind: {kind}.");
+        }
+    }
+
+    /// <summary>
+    /// The M1 focus action: an explicit windowId is selected and focused. Its
+    /// request shape and behavior are unchanged (R8).
+    /// </summary>
+    private async Task<JsonElement> HandleFocusActionAsync(JsonNode? id, JsonElement parameters)
+    {
         if (!parameters.TryGetProperty("windowId", out var windowIdElement)
             || windowIdElement.ValueKind != JsonValueKind.String
             || string.IsNullOrWhiteSpace(windowIdElement.GetString()))
@@ -521,6 +596,107 @@ public sealed class JsonRpcDispatcher
             .ConfigureAwait(false);
 
         return FromSelectResult(id, result);
+    }
+
+    private async Task<JsonElement> ExecuteActionAsync(
+        JsonNode? id,
+        Func<CancellationToken, Task<ActionResult>> execute)
+    {
+        if (_desktop.IsLocked())
+        {
+            return DesktopUnavailableError(id);
+        }
+
+        // The token is read when the action starts so a stop that arrived
+        // while the request was being parsed still aborts it.
+        var result = await execute(_control.Token).ConfigureAwait(false);
+        return Success(id, result);
+    }
+
+    private async Task<JsonElement> HandleFindAsync(JsonNode? id, JsonElement request)
+    {
+        if (!TryReadParams(request, out var parameters))
+        {
+            return Error(id, InvalidRequestCode, "find params must be an object.", "INVALID_REQUEST");
+        }
+
+        var findRequest = ParseFindRequest(parameters);
+
+        if (_desktop.IsLocked())
+        {
+            return DesktopUnavailableError(id);
+        }
+
+        var result = await _find
+            .ExecuteAsync(findRequest, _control.Token)
+            .ConfigureAwait(false);
+
+        return Success(id, result);
+    }
+
+    private async Task<JsonElement> HandleWaitAsync(JsonNode? id, JsonElement request)
+    {
+        if (!TryReadParams(request, out var parameters))
+        {
+            return Error(id, InvalidRequestCode, "wait params must be an object.", "INVALID_REQUEST");
+        }
+
+        var waitRequest = ParseWaitRequest(parameters);
+
+        if (_desktop.IsLocked())
+        {
+            return DesktopUnavailableError(id);
+        }
+
+        var result = await _wait
+            .ExecuteAsync(waitRequest, _control.Token)
+            .ConfigureAwait(false);
+
+        // The host condition is mapped back to the shared discriminated union,
+        // because System.Text.Json cannot serialize the abstraction directly.
+        return Success(id, WaitResultToProtocol(result));
+    }
+
+    private async Task<JsonElement> HandleReadTextAsync(JsonNode? id, JsonElement request)
+    {
+        if (!TryReadParams(request, out var parameters))
+        {
+            return Error(id, InvalidRequestCode, "read_text params must be an object.", "INVALID_REQUEST");
+        }
+
+        var readTextRequest = ParseReadTextRequest(parameters);
+
+        if (_desktop.IsLocked())
+        {
+            return DesktopUnavailableError(id);
+        }
+
+        var result = await _readText
+            .ExecuteAsync(readTextRequest, _control.Token)
+            .ConfigureAwait(false);
+
+        return Success(id, result);
+    }
+
+    private async Task<JsonElement> HandleBatchAsync(JsonNode? id, JsonElement request)
+    {
+        if (!TryReadParams(request, out var parameters))
+        {
+            return Error(id, InvalidRequestCode, "action.batch params must be an object.", "INVALID_REQUEST");
+        }
+
+        var batchRequest = ParseBatchRequest(parameters);
+
+        if (_desktop.IsLocked())
+        {
+            return DesktopUnavailableError(id);
+        }
+
+        var result = await _batch
+            .ExecuteAsync(batchRequest, _control.Token)
+            .ConfigureAwait(false);
+
+        return Success(id, BatchResultToProtocol(result));
     }
 
     /// <summary>
@@ -571,6 +747,643 @@ public sealed class JsonRpcDispatcher
         return true;
     }
 
+    /// <summary>
+    /// Reads the params object for a method. A missing or non-object value is
+    /// the caller's error, reported as INVALID_REQUEST before any work runs.
+    /// </summary>
+    private static bool TryReadParams(JsonElement request, out JsonElement parameters)
+        => request.TryGetProperty("params", out parameters)
+            && parameters.ValueKind == JsonValueKind.Object;
+
+    private static ActionFailedException Invalid(string message)
+        => new(ErrorCode.InvalidRequest, message);
+
+    /// <summary>
+    /// Rejects properties the shared strict schemas do not allow, so a typo or
+    /// a platform-specific field cannot be silently ignored.
+    /// </summary>
+    private static void EnsureAllowedFields(JsonElement element, params string[] allowed)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (Array.IndexOf(allowed, property.Name) < 0)
+            {
+                throw Invalid($"Unknown field \"{property.Name}\".");
+            }
+        }
+    }
+
+    private static string? ReadOptionalString(JsonElement parameters, string name)
+    {
+        if (!parameters.TryGetProperty(name, out var element))
+        {
+            return null;
+        }
+
+        if (element.ValueKind != JsonValueKind.String
+            || string.IsNullOrEmpty(element.GetString()))
+        {
+            throw Invalid($"{name} must be a non-empty string.");
+        }
+
+        return element.GetString();
+    }
+
+    private static string ReadRequiredString(JsonElement parameters, string name)
+        => ReadOptionalString(parameters, name)
+            ?? throw Invalid($"{name} is required.");
+
+    private static bool? ReadOptionalBool(JsonElement parameters, string name)
+    {
+        if (!parameters.TryGetProperty(name, out var element))
+        {
+            return null;
+        }
+
+        if (element.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+        {
+            throw Invalid($"{name} must be a boolean.");
+        }
+
+        return element.GetBoolean();
+    }
+
+    private static int? ReadOptionalPositiveInt(JsonElement parameters, string name)
+    {
+        if (!parameters.TryGetProperty(name, out var element))
+        {
+            return null;
+        }
+
+        if (element.ValueKind != JsonValueKind.Number
+            || !element.TryGetInt32(out var value)
+            || value < 1)
+        {
+            throw Invalid($"{name} must be a positive integer.");
+        }
+
+        return value;
+    }
+
+    private static double? ReadOptionalFiniteDouble(JsonElement parameters, string name)
+    {
+        if (!parameters.TryGetProperty(name, out var element))
+        {
+            return null;
+        }
+
+        if (element.ValueKind != JsonValueKind.Number
+            || !element.TryGetDouble(out var value)
+            || !double.IsFinite(value))
+        {
+            throw Invalid($"{name} must be a finite number.");
+        }
+
+        return value;
+    }
+
+    private static CoordinateSpace ReadSpace(JsonElement parameters)
+    {
+        var value = ReadOptionalString(parameters, "space");
+        return value switch
+        {
+            null or "image" => CoordinateSpace.Image,
+            "screen" => CoordinateSpace.Screen,
+            _ => throw Invalid("space must be \"image\" or \"screen\"."),
+        };
+    }
+
+    private static MouseButton ReadButton(JsonElement parameters)
+    {
+        var value = ReadOptionalString(parameters, "button");
+        return value switch
+        {
+            null or "left" => MouseButton.Left,
+            "middle" => MouseButton.Middle,
+            "right" => MouseButton.Right,
+            _ => throw Invalid("button must be \"left\", \"middle\", or \"right\"."),
+        };
+    }
+
+    private static TypeMethod ReadTypeMethod(JsonElement parameters)
+    {
+        var value = ReadOptionalString(parameters, "method");
+        return value switch
+        {
+            null or "paste" => TypeMethod.Paste,
+            "value" => TypeMethod.Value,
+            "keys" => TypeMethod.Keys,
+            _ => throw Invalid("method must be \"paste\", \"value\", or \"keys\"."),
+        };
+    }
+
+    private static ScrollDirection ReadDirection(JsonElement parameters)
+    {
+        var value = ReadRequiredString(parameters, "direction");
+        return value switch
+        {
+            "up" => ScrollDirection.Up,
+            "down" => ScrollDirection.Down,
+            "left" => ScrollDirection.Left,
+            "right" => ScrollDirection.Right,
+            _ => throw Invalid("direction must be \"up\", \"down\", \"left\", or \"right\"."),
+        };
+    }
+
+    /// <summary>
+    /// Parses the shared expect array. An explicit <c>null</c> is treated as no
+    /// predicates, matching the host's empty-list default.
+    /// </summary>
+    private static IReadOnlyList<ExpectPredicate> ParseExpect(JsonElement parameters)
+    {
+        if (!parameters.TryGetProperty("expect", out var element)
+            || element.ValueKind == JsonValueKind.Null)
+        {
+            return [];
+        }
+
+        if (element.ValueKind != JsonValueKind.Array)
+        {
+            throw Invalid("expect must be an array of predicates.");
+        }
+
+        var predicates = new List<ExpectPredicate>();
+        foreach (var predicate in element.EnumerateArray())
+        {
+            predicates.Add(ParseExpectPredicate(predicate));
+        }
+
+        return predicates;
+    }
+
+    private static ExpectPredicate ParseExpectPredicate(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            throw Invalid("Each expect predicate must be an object.");
+        }
+
+        var kind = ReadRequiredString(element, "kind");
+        switch (kind)
+        {
+            case "foreground":
+                EnsureAllowedFields(element, "kind");
+                return new ExpectForeground();
+
+            case "node":
+            {
+                EnsureAllowedFields(element, "kind", "role", "name", "identifier", "focused");
+                var role = ReadOptionalString(element, "role");
+                var name = ReadOptionalString(element, "name");
+                var identifier = ReadOptionalString(element, "identifier");
+                var focused = ReadOptionalBool(element, "focused");
+
+                // The shared schema rejects a selector-less node predicate;
+                // the evaluator would otherwise match every node.
+                if (role is null && name is null && identifier is null)
+                {
+                    throw Invalid("A node expect predicate requires a role, name, or identifier.");
+                }
+
+                return new ExpectNode
+                {
+                    Role = role,
+                    Name = name,
+                    Identifier = identifier,
+                    Focused = focused,
+                };
+            }
+
+            case "text":
+            {
+                EnsureAllowedFields(element, "kind", "role", "name", "identifier", "contains");
+                return new ExpectText
+                {
+                    Role = ReadOptionalString(element, "role"),
+                    Name = ReadOptionalString(element, "name"),
+                    Identifier = ReadOptionalString(element, "identifier"),
+                    Contains = ReadRequiredString(element, "contains"),
+                };
+            }
+
+            default:
+                throw Invalid($"Unsupported expect predicate kind: {kind}.");
+        }
+    }
+
+    private static WaitCondition ParseCondition(JsonElement parameters)
+    {
+        if (!parameters.TryGetProperty("condition", out var element)
+            || element.ValueKind != JsonValueKind.Object)
+        {
+            throw Invalid("A wait condition object is required.");
+        }
+
+        var kind = ReadRequiredString(element, "kind");
+        switch (kind)
+        {
+            case "window":
+            {
+                EnsureAllowedFields(element, "kind", "process", "title");
+                var process = ReadOptionalString(element, "process");
+                var title = ReadOptionalString(element, "title");
+                if (process is null && title is null)
+                {
+                    throw Invalid("A window wait condition requires a process or a title.");
+                }
+
+                return new WaitWindowCondition { Process = process, Title = title };
+            }
+
+            case "node":
+            {
+                EnsureAllowedFields(element, "kind", "role", "name", "identifier");
+                var role = ReadOptionalString(element, "role");
+                var name = ReadOptionalString(element, "name");
+                var identifier = ReadOptionalString(element, "identifier");
+                if (role is null && name is null && identifier is null)
+                {
+                    throw Invalid("A node wait condition requires a role, name, or identifier.");
+                }
+
+                return new WaitNodeCondition
+                {
+                    Role = role,
+                    Name = name,
+                    Identifier = identifier,
+                };
+            }
+
+            case "text":
+            {
+                EnsureAllowedFields(element, "kind", "role", "name", "identifier", "contains");
+                return new WaitTextCondition
+                {
+                    Role = ReadOptionalString(element, "role"),
+                    Name = ReadOptionalString(element, "name"),
+                    Identifier = ReadOptionalString(element, "identifier"),
+                    Contains = ReadRequiredString(element, "contains"),
+                };
+            }
+
+            default:
+                throw Invalid($"Unsupported wait condition kind: {kind}.");
+        }
+    }
+
+    private static ClickRequest ParseClickRequest(JsonElement parameters)
+    {
+        EnsureAllowedFields(
+            parameters,
+            "kind",
+            "nodeId",
+            "x",
+            "y",
+            "space",
+            "button",
+            "count",
+            "expect");
+
+        var nodeId = ReadOptionalString(parameters, "nodeId");
+        var x = ReadOptionalFiniteDouble(parameters, "x");
+        var y = ReadOptionalFiniteDouble(parameters, "y");
+        EnsureSingleTarget(nodeId, x, y);
+
+        return new ClickRequest
+        {
+            NodeId = nodeId,
+            X = x,
+            Y = y,
+            Space = ReadSpace(parameters),
+            Button = ReadButton(parameters),
+            Count = ReadOptionalPositiveInt(parameters, "count") ?? 1,
+            Expect = ParseExpect(parameters),
+        };
+    }
+
+    private static TypeRequest ParseTypeRequest(JsonElement parameters)
+    {
+        EnsureAllowedFields(parameters, "kind", "text", "method", "nodeId", "expect");
+
+        return new TypeRequest
+        {
+            Text = ReadRequiredString(parameters, "text"),
+            Method = ReadTypeMethod(parameters),
+            NodeId = ReadOptionalString(parameters, "nodeId"),
+            Expect = ParseExpect(parameters),
+        };
+    }
+
+    private static KeyRequest ParseKeyRequest(JsonElement parameters)
+    {
+        EnsureAllowedFields(parameters, "kind", "keys", "expect");
+
+        return new KeyRequest
+        {
+            Keys = ReadRequiredString(parameters, "keys"),
+            Expect = ParseExpect(parameters),
+        };
+    }
+
+    private static ScrollRequest ParseScrollRequest(JsonElement parameters)
+    {
+        EnsureAllowedFields(
+            parameters,
+            "kind",
+            "nodeId",
+            "x",
+            "y",
+            "space",
+            "direction",
+            "amount",
+            "expect");
+
+        var nodeId = ReadOptionalString(parameters, "nodeId");
+        var x = ReadOptionalFiniteDouble(parameters, "x");
+        var y = ReadOptionalFiniteDouble(parameters, "y");
+        EnsureSingleTarget(nodeId, x, y);
+
+        return new ScrollRequest
+        {
+            NodeId = nodeId,
+            X = x,
+            Y = y,
+            Space = ReadSpace(parameters),
+            Direction = ReadDirection(parameters),
+            Amount = ReadOptionalPositiveInt(parameters, "amount") ?? 1,
+            Expect = ParseExpect(parameters),
+        };
+    }
+
+    /// <summary>
+    /// Click and scroll target exactly one of a node ID or an (x, y) pair,
+    /// mirroring the shared schema (R9).
+    /// </summary>
+    private static void EnsureSingleTarget(string? nodeId, double? x, double? y)
+    {
+        var hasNode = nodeId is not null;
+        var hasX = x is not null;
+        var hasY = y is not null;
+
+        if (hasNode ? hasX || hasY : !(hasX && hasY))
+        {
+            throw Invalid("Provide exactly one of nodeId or x and y.");
+        }
+    }
+
+    private static FindRequest ParseFindRequest(JsonElement parameters)
+    {
+        EnsureAllowedFields(parameters, "text", "role", "maxResults");
+
+        return new FindRequest
+        {
+            Text = ReadOptionalString(parameters, "text"),
+            Role = ReadOptionalString(parameters, "role"),
+            MaxResults = ReadOptionalPositiveInt(parameters, "maxResults"),
+        };
+    }
+
+    private static WaitRequest ParseWaitRequest(JsonElement parameters, bool isStep = false)
+    {
+        // A batch step is the wait request flattened with its kind discriminator,
+        // while the top-level wait params must not carry one.
+        EnsureAllowedFields(
+            parameters,
+            isStep
+                ? new[] { "kind", "condition", "present", "timeoutMs", "pollMs" }
+                : new[] { "condition", "present", "timeoutMs", "pollMs" });
+
+        return new WaitRequest
+        {
+            Condition = ParseCondition(parameters),
+            Present = ReadOptionalBool(parameters, "present") ?? true,
+            TimeoutMs = ReadOptionalPositiveInt(parameters, "timeoutMs"),
+            PollMs = ReadOptionalPositiveInt(parameters, "pollMs"),
+        };
+    }
+
+    private static ReadTextRequest ParseReadTextRequest(JsonElement parameters, bool isStep = false)
+    {
+        EnsureAllowedFields(
+            parameters,
+            isStep
+                ? new[] { "kind", "nodeId", "maxLength" }
+                : new[] { "nodeId", "maxLength" });
+
+        return new ReadTextRequest
+        {
+            NodeId = ReadRequiredString(parameters, "nodeId"),
+            MaxLength = ReadOptionalPositiveInt(parameters, "maxLength"),
+        };
+    }
+
+    private static BatchRequest ParseBatchRequest(JsonElement parameters)
+    {
+        EnsureAllowedFields(parameters, "steps", "snapshotBefore", "snapshotAfter");
+
+        if (!parameters.TryGetProperty("steps", out var stepsElement)
+            || stepsElement.ValueKind != JsonValueKind.Array)
+        {
+            throw Invalid("A batch requires a steps array.");
+        }
+
+        var steps = new List<ActionStep>();
+        foreach (var step in stepsElement.EnumerateArray())
+        {
+            steps.Add(ParseStep(step));
+        }
+
+        if (steps.Count == 0)
+        {
+            throw Invalid("A batch requires at least one step.");
+        }
+
+        return new BatchRequest
+        {
+            Steps = steps,
+            SnapshotBefore = ReadOptionalBool(parameters, "snapshotBefore") ?? false,
+            SnapshotAfter = ReadOptionalBool(parameters, "snapshotAfter") ?? false,
+        };
+    }
+
+    private static ActionStep ParseStep(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            throw Invalid("Each batch step must be an object.");
+        }
+
+        var kind = ReadRequiredString(element, "kind");
+        return kind switch
+        {
+            "click" => new ClickStep { Request = ParseClickRequest(element) },
+            "type" => new TypeStep { Request = ParseTypeRequest(element) },
+            "key" => new KeyStep { Request = ParseKeyRequest(element) },
+            "scroll" => new ScrollStep { Request = ParseScrollRequest(element) },
+            "wait" => new WaitStep { Request = ParseWaitRequest(element, isStep: true) },
+            "readText" => new ReadTextStep
+            {
+                Request = ParseReadTextRequest(element, isStep: true),
+            },
+            _ => throw Invalid($"Unsupported batch step kind: {kind}."),
+        };
+    }
+
+    /// <summary>
+    /// Maps a host <see cref="WaitResult"/> onto the shared protocol shape.
+    /// The condition is a discriminated union, so its kind and selector fields
+    /// are written explicitly instead of relying on polymorphism.
+    /// </summary>
+    private static JsonObject WaitResultToProtocol(WaitResult result)
+    {
+        var node = new JsonObject
+        {
+            ["condition"] = ConditionToProtocol(result.Condition),
+            ["elapsedMs"] = result.ElapsedMs,
+        };
+
+        if (result.Window is not null)
+        {
+            node["window"] = JsonSerializer.SerializeToNode(result.Window, ProtocolJson.Options);
+        }
+
+        return node;
+    }
+
+    private static JsonObject ConditionToProtocol(WaitCondition condition)
+    {
+        switch (condition)
+        {
+            case WaitWindowCondition window:
+            {
+                var node = new JsonObject { ["kind"] = "window" };
+                if (window.Process is not null)
+                {
+                    node["process"] = window.Process;
+                }
+
+                if (window.Title is not null)
+                {
+                    node["title"] = window.Title;
+                }
+
+                return node;
+            }
+
+            case WaitNodeCondition nodeCondition:
+            {
+                var node = new JsonObject { ["kind"] = "node" };
+                AddSelector(node, nodeCondition.Role, nodeCondition.Name, nodeCondition.Identifier);
+                return node;
+            }
+
+            case WaitTextCondition text:
+            {
+                var node = new JsonObject { ["kind"] = "text" };
+                AddSelector(node, text.Role, text.Name, text.Identifier);
+                node["contains"] = text.Contains;
+                return node;
+            }
+
+            default:
+                throw new InvalidOperationException("The wait condition is not supported.");
+        }
+    }
+
+    private static void AddSelector(
+        JsonObject node,
+        string? role,
+        string? name,
+        string? identifier)
+    {
+        if (role is not null)
+        {
+            node["role"] = role;
+        }
+
+        if (name is not null)
+        {
+            node["name"] = name;
+        }
+
+        if (identifier is not null)
+        {
+            node["identifier"] = identifier;
+        }
+    }
+
+    /// <summary>
+    /// Maps a batch result onto the shared protocol shape. <see cref="BatchStepResult.Code"/>
+    /// is the host error enum, so it is written with <c>ToProtocolCode()</c>.
+    /// </summary>
+    private static JsonObject BatchResultToProtocol(BatchResult result)
+    {
+        var steps = new JsonArray();
+        foreach (var step in result.Steps)
+        {
+            var item = new JsonObject
+            {
+                ["index"] = step.Index,
+                ["kind"] = step.Kind,
+                ["ok"] = step.Ok,
+            };
+
+            if (step.Code is { } code)
+            {
+                item["code"] = code.ToProtocolCode();
+            }
+
+            if (step.Message is { } message)
+            {
+                item["message"] = message;
+            }
+
+            if (step.Data is { } data)
+            {
+                item["data"] = StepDataToProtocol(data);
+            }
+
+            steps.Add(item);
+        }
+
+        var batch = new JsonObject { ["steps"] = steps };
+
+        if (result.FailedIndex is { } failedIndex)
+        {
+            batch["failedIndex"] = failedIndex;
+        }
+
+        if (result.SnapshotBefore is { } before)
+        {
+            batch["snapshotBefore"] = JsonSerializer.SerializeToNode(before, ProtocolJson.Options);
+        }
+
+        if (result.SnapshotAfter is { } after)
+        {
+            batch["snapshotAfter"] = JsonSerializer.SerializeToNode(after, ProtocolJson.Options);
+        }
+
+        if (result.Warning is { } warning)
+        {
+            batch["warning"] = warning;
+        }
+
+        return batch;
+    }
+
+    private static JsonNode? StepDataToProtocol(object data)
+        => data switch
+        {
+            WaitResult wait => WaitResultToProtocol(wait),
+            _ => JsonSerializer.SerializeToNode(data, ProtocolJson.Options),
+        };
+
+    private static string ActionFailureMessage(ActionFailedException failure)
+        => failure.FailedPredicate is { } predicate
+            && !failure.Message.Contains(predicate, StringComparison.Ordinal)
+                ? $"{failure.Message} (predicate: {predicate})"
+                : failure.Message;
+
     private static int RpcCodeFor(ErrorCode code) => code switch
     {
         ErrorCode.InvalidRequest => InvalidRequestCode,
@@ -589,11 +1402,17 @@ public sealed class JsonRpcDispatcher
 
     private static JsonElement Success(JsonNode? id, object result)
     {
+        // Results that are already protocol-shaped nodes (the wait and batch
+        // mappers) are used as-is; everything else serializes by runtime type.
+        var resultNode = result is JsonNode node
+            ? node
+            : JsonSerializer.SerializeToNode(result, ProtocolJson.Options);
+
         var response = new JsonObject
         {
             ["jsonrpc"] = "2.0",
             ["id"] = id,
-            ["result"] = JsonSerializer.SerializeToNode(result, ProtocolJson.Options),
+            ["result"] = resultNode,
         };
 
         return JsonSerializer.SerializeToElement(response, ProtocolJson.Options);

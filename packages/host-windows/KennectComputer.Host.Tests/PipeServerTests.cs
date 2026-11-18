@@ -1,7 +1,9 @@
 using System.IO.Pipes;
 using System.Text.Json;
+using KennectComputer.Host.Actions;
 using KennectComputer.Host.Auth;
 using KennectComputer.Host.Control;
+using KennectComputer.Host.Input;
 using KennectComputer.Host.Ipc;
 using KennectComputer.Host.Policy;
 using KennectComputer.Host.Uia;
@@ -181,11 +183,53 @@ public sealed class PipeServerTests
             var api = new FakeWindowApi();
             var registry = new WindowRegistry(api);
             var enumerator = new WindowEnumerator(api, registry);
+            var selectionStore = new SelectionStore();
             var selection = new SelectionService(
                 registry,
                 new AllowAllAuthorization(),
-                new SelectionStore(),
+                selectionStore,
                 windows: enumerator);
+
+            // The pipe tests exercise transport and handshake only; every M2
+            // action service is still wired to fakes so no method can reach a
+            // real desktop.
+            var walker = new FakeUiaWalker();
+            var focus = new FakeWin32();
+            var snapshots = new SnapshotStore();
+            var snapshotter = new UiaSnapshotter(walker, _ => { }, _ => { });
+            var preflight = new ActionPreflight(
+                new ForegroundService(focus),
+                selectionStore,
+                registry,
+                new ExpectEvaluator(walker, focus),
+                TimeSpan.FromMilliseconds(10));
+            var resolver = new FakeUiaNodeResolver(node: null);
+            var input = new FakeInputSender();
+            var clipboard = new FakeClipboard();
+            var click = new ClickAction(resolver, preflight, input, snapshots);
+            var type = new TypeAction(resolver, preflight, input, clipboard, snapshots);
+            var key = new KeyAction(preflight, input);
+            var scroll = new ScrollAction(resolver, preflight, input, snapshots);
+            var wait = new WaitAction(
+                walker,
+                enumerator,
+                selectionStore,
+                registry,
+                SystemWaitClock.Instance);
+            var readText = new ReadTextAction(resolver, snapshots, selectionStore, registry);
+            var find = new FindAction(walker, snapshotter, snapshots, selectionStore, registry);
+            var batch = new BatchAction(
+                click,
+                type,
+                key,
+                scroll,
+                wait,
+                readText,
+                snapshotter,
+                snapshots,
+                selectionStore,
+                registry);
+
             var dispatcher = new JsonRpcDispatcher(
                 tokens,
                 new FakeMonitorProvider(),
@@ -193,9 +237,17 @@ public sealed class PipeServerTests
                 enumerator,
                 selection,
                 registry,
-                new UiaSnapshotter(new FakeUiaWalker(), _ => { }, _ => { }),
-                new SnapshotStore(),
-                new ControlSession());
+                snapshotter,
+                snapshots,
+                new ControlSession(),
+                click,
+                type,
+                key,
+                scroll,
+                wait,
+                readText,
+                find,
+                batch);
             var server = new PipeServer(pipeName, tokens, dispatcher);
             var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             var run = server.RunAsync(cancellation.Token);

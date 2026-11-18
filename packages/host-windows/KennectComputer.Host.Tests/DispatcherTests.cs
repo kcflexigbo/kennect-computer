@@ -1,7 +1,9 @@
 using System.Text.Json;
+using KennectComputer.Host.Actions;
 using KennectComputer.Host.Auth;
 using KennectComputer.Host.Config;
 using KennectComputer.Host.Control;
+using KennectComputer.Host.Input;
 using KennectComputer.Host.Ipc;
 using KennectComputer.Host.Policy;
 using KennectComputer.Host.Protocol;
@@ -61,11 +63,28 @@ public sealed class DispatcherTests
             normal: new RawWindow(4242, 100, "Notepad", "Notepad", new Rect(10, 20, 800, 600)));
         var registry = new WindowRegistry(api);
         var enumerator = new WindowEnumerator(api, registry);
+        var selectionStore = new SelectionStore();
         var selection = new SelectionService(
             registry,
             new AllowAllAuthorization(),
-            new SelectionStore(),
+            selectionStore,
             windows: enumerator);
+        var walker = new FakeUiaWalker();
+        var focus = new FakeWin32();
+        var snapshots = new SnapshotStore();
+        var snapshotter = NewSnapshotter(walker);
+        var actions = NewActions(
+            walker,
+            focus,
+            registry,
+            enumerator,
+            selectionStore,
+            snapshots,
+            snapshotter,
+            new FakeInputSender(),
+            new FakeClipboard(),
+            new DispatcherWaitClock(),
+            liveNode: null);
         var dispatcher = new JsonRpcDispatcher(
             tokens,
             new FakeMonitorProvider(),
@@ -73,9 +92,17 @@ public sealed class DispatcherTests
             enumerator,
             selection,
             registry,
-            NewSnapshotter(new FakeUiaWalker()),
-            new SnapshotStore(),
-            new ControlSession());
+            snapshotter,
+            snapshots,
+            new ControlSession(),
+            actions.Click,
+            actions.Type,
+            actions.Key,
+            actions.Scroll,
+            actions.Wait,
+            actions.ReadText,
+            actions.Find,
+            actions.Batch);
         var token = tokens.Rotate();
 
         var hello = await dispatcher.HandleAsync(JsonDocument.Parse($$$"""{"jsonrpc":"2.0","id":1,"method":"hello","params":{"token":"{{{token}}}","protocolVersion":1,"clientName":"test"}}""").RootElement);
@@ -202,11 +229,422 @@ public sealed class DispatcherTests
         var harness = NewSelectionHarness(NotepadRawWindow());
 
         var response = await harness.Dispatcher.HandleAsync(
-            Request("action", """{"kind":"click","windowId":"w_1"}"""));
+            Request("action", """{"kind":"teleport","windowId":"w_1"}"""));
 
+        Assert.Equal("INVALID_REQUEST", ErrorCodeOf(response));
+    }
+
+    [Fact]
+    public async Task ActionClickWithANodeCallsTheClickServiceAndReturnsTheActionResult()
+    {
+        var raw = NotepadRawWindow();
+        var target = ButtonTarget();
+        var harness = NewSelectionHarness(
+            new FakeUiaWalker(),
+            new FakeWindowCapture(),
+            exclusions: null,
+            perception: null,
+            desktop: null,
+            api: null,
+            liveNode: FakeUiaNode.From(target),
+            windows: [raw]);
+        var info = harness.Registry.Register(raw);
+        harness.Selection.Select(info);
+        harness.SaveNode("n1:1", target);
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("action", """{"kind":"click","nodeId":"n1:1"}"""));
+
+        var result = response.GetProperty("result");
+        Assert.Equal("click", result.GetProperty("action").GetString());
+        Assert.Equal("pattern", result.GetProperty("method").GetString());
+        Assert.True(result.GetProperty("needsObservation").GetBoolean());
+        Assert.Equal(info.WindowId, result.GetProperty("window").GetProperty("windowId").GetString());
+
+        // The click was semantic: it focused the window and sent no mouse input.
+        Assert.Equal(1, harness.Focus.SetForegroundCalls);
+        Assert.Empty(harness.Input.Calls);
+    }
+
+    [Fact]
+    public async Task ActionClickWithoutASelectedWindowReturnsInvalidRequest()
+    {
+        var harness = NewSelectionHarness(new FakeUiaWalker(), new FakeWindowCapture(), NotepadRawWindow());
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("action", """{"kind":"click","x":5,"y":5,"space":"screen"}"""));
+
+        Assert.Equal("INVALID_REQUEST", ErrorCodeOf(response));
+        Assert.Empty(harness.Input.Calls);
+        Assert.Equal(0, harness.Focus.SetForegroundCalls);
+    }
+
+    [Fact]
+    public async Task ActionClickWithAStaleNodeReturnsStaleSnapshot()
+    {
+        var raw = NotepadRawWindow();
+        var harness = NewSelectionHarness(new FakeUiaWalker(), new FakeWindowCapture(), raw);
+        var info = harness.Registry.Register(raw);
+        harness.Selection.Select(info);
+        harness.SaveNode("n1:1", ButtonTarget());
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("action", """{"kind":"click","nodeId":"n2:1"}"""));
+
+        Assert.Equal("STALE_SNAPSHOT", ErrorCodeOf(response));
+        Assert.Empty(harness.Input.Calls);
+        Assert.Equal(0, harness.Focus.SetForegroundCalls);
+    }
+
+    [Fact]
+    public async Task ActionClickAcceptsANullExpectAsNoPredicates()
+    {
+        var raw = NotepadRawWindow();
+        var harness = NewSelectionHarness(new FakeUiaWalker(), new FakeWindowCapture(), raw);
+        var info = harness.Registry.Register(raw);
+        harness.Selection.Select(info);
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request(
+                "action",
+                """{"kind":"click","x":5,"y":5,"space":"screen","expect":null}"""));
+
+        Assert.True(response.TryGetProperty("result", out _));
+        Assert.Equal([(5, 5)], harness.Input.Moves);
+    }
+
+    [Fact]
+    public async Task ActionTypePastesTextAndReturnsTheActionResult()
+    {
+        var raw = NotepadRawWindow();
+        var harness = NewSelectionHarness(new FakeUiaWalker(), new FakeWindowCapture(), raw);
+        var info = harness.Registry.Register(raw);
+        harness.Selection.Select(info);
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("action", """{"kind":"type","text":"hello"}"""));
+
+        var result = response.GetProperty("result");
+        Assert.Equal("type", result.GetProperty("action").GetString());
+        Assert.Equal("paste", result.GetProperty("method").GetString());
+
+        // Paste sets the text and then restores the (empty) clipboard.
+        Assert.Equal(["hello", string.Empty], harness.Clipboard.Sets);
         Assert.Equal(
-            "INVALID_REQUEST",
-            response.GetProperty("error").GetProperty("data").GetProperty("code").GetString());
+            ["KeyDown:17", "KeyDown:86", "KeyUp:86", "KeyUp:17"],
+            harness.Input.Calls);
+    }
+
+    [Fact]
+    public async Task ActionKeySendsTheChordAndReturnsTheActionResult()
+    {
+        var raw = NotepadRawWindow();
+        var harness = NewSelectionHarness(new FakeUiaWalker(), new FakeWindowCapture(), raw);
+        var info = harness.Registry.Register(raw);
+        harness.Selection.Select(info);
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("action", """{"kind":"key","keys":"Enter"}"""));
+
+        var result = response.GetProperty("result");
+        Assert.Equal("key", result.GetProperty("action").GetString());
+        Assert.Equal("keys", result.GetProperty("method").GetString());
+        Assert.Equal(["KeyDown:13", "KeyUp:13"], harness.Input.Calls);
+    }
+
+    [Fact]
+    public async Task ActionScrollAtACoordinateTurnsTheWheel()
+    {
+        var raw = NotepadRawWindow();
+        var harness = NewSelectionHarness(new FakeUiaWalker(), new FakeWindowCapture(), raw);
+        var info = harness.Registry.Register(raw);
+        harness.Selection.Select(info);
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request(
+                "action",
+                """{"kind":"scroll","x":5,"y":5,"space":"screen","direction":"down","amount":2}"""));
+
+        var result = response.GetProperty("result");
+        Assert.Equal("scroll", result.GetProperty("action").GetString());
+        Assert.Equal("wheel", result.GetProperty("method").GetString());
+        Assert.Equal([(5, 5)], harness.Input.Moves);
+        Assert.Equal([(-240, false)], harness.Input.Scrolls);
+    }
+
+    [Fact]
+    public async Task ActionClickReturnsFocusRefusedAndSendsNoInput()
+    {
+        var raw = NotepadRawWindow();
+        var harness = NewSelectionHarness(
+            new FakeUiaWalker(),
+            new FakeWindowCapture(),
+            exclusions: null,
+            perception: null,
+            desktop: null,
+            api: null,
+            foregroundSucceeds: false,
+            windows: [raw]);
+        var info = harness.Registry.Register(raw);
+        harness.Selection.Select(info);
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("action", """{"kind":"click","x":5,"y":5,"space":"screen"}"""));
+
+        Assert.Equal("FOCUS_REFUSED", ErrorCodeOf(response));
+        Assert.Empty(harness.Input.Calls);
+    }
+
+    [Fact]
+    public async Task ActionClickWithAFailedExpectationReturnsExpectationFailedWithThePredicate()
+    {
+        var raw = NotepadRawWindow();
+        var harness = NewSelectionHarness(new FakeUiaWalker(), new FakeWindowCapture(), raw);
+        var info = harness.Registry.Register(raw);
+        harness.Selection.Select(info);
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request(
+                "action",
+                """{"kind":"click","x":5,"y":5,"space":"screen","expect":[{"kind":"node","name":"Missing"}]}"""));
+
+        Assert.Equal("EXPECTATION_FAILED", ErrorCodeOf(response));
+        Assert.Contains(
+            "node:Missing",
+            response.GetProperty("error").GetProperty("message").GetString());
+        Assert.Empty(harness.Input.Calls);
+        Assert.Equal(0, harness.Focus.SetForegroundCalls);
+    }
+
+    [Fact]
+    public async Task ActionRejectsUnknownFields()
+    {
+        var harness = NewSelectionHarness(NotepadRawWindow());
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("action", """{"kind":"click","x":1,"y":2,"space":"screen","bogus":true}"""));
+
+        Assert.Equal("INVALID_REQUEST", ErrorCodeOf(response));
+    }
+
+    [Theory]
+    [InlineData("action", """{"kind":"scroll","x":1,"y":2,"space":"screen"}""")]
+    [InlineData("action", """{"kind":"key"}""")]
+    [InlineData("action", """{"kind":"type"}""")]
+    [InlineData("action", """{"kind":"click","nodeId":"n1:1","x":1,"y":2}""")]
+    [InlineData("find", """{"maxResults":0}""")]
+    [InlineData("wait", """{"condition":{"kind":"text"}}""")]
+    [InlineData("read_text", """{}""")]
+    [InlineData("action.batch", """{}""")]
+    [InlineData("action.batch", """{"steps":[]}""")]
+    [InlineData("action.batch", """{"steps":[{"kind":"teleport"}]}""")]
+    public async Task MissingOrInvalidRequiredFieldsAreRejected(string method, string parametersJson)
+    {
+        var harness = NewSelectionHarness(NotepadRawWindow());
+
+        var response = await harness.Dispatcher.HandleAsync(Request(method, parametersJson));
+
+        Assert.Equal("INVALID_REQUEST", ErrorCodeOf(response));
+        Assert.Empty(harness.Input.Calls);
+    }
+
+    [Fact]
+    public async Task FindReturnsMatchesWithAGeneration()
+    {
+        var raw = NotepadRawWindow();
+        var harness = NewSelectionHarness(new FakeUiaWalker(), new FakeWindowCapture(), raw);
+        var info = harness.Registry.Register(raw);
+        harness.Selection.Select(info);
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("find", """{"text":"send"}"""));
+
+        var result = response.GetProperty("result");
+        var generation = result.GetProperty("generation").GetInt32();
+        Assert.True(generation > 0);
+
+        var match = Assert.Single(result.GetProperty("matches").EnumerateArray());
+        Assert.Equal("button", match.GetProperty("role").GetString());
+        Assert.Equal("Send", match.GetProperty("name").GetString());
+        Assert.StartsWith($"n{generation}:", match.GetProperty("nodeId").GetString());
+        Assert.Equal(info.WindowId, result.GetProperty("window").GetProperty("windowId").GetString());
+    }
+
+    [Fact]
+    public async Task ReadTextReturnsTheText()
+    {
+        var raw = NotepadRawWindow();
+        var target = EditTarget();
+        var live = FakeUiaNode.From(target) with { Text = "Hello world" };
+        var harness = NewSelectionHarness(
+            new FakeUiaWalker(),
+            new FakeWindowCapture(),
+            exclusions: null,
+            perception: null,
+            desktop: null,
+            api: null,
+            liveNode: live,
+            windows: [raw]);
+        var info = harness.Registry.Register(raw);
+        harness.Selection.Select(info);
+        harness.SaveNode("n1:4", target);
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("read_text", """{"nodeId":"n1:4"}"""));
+
+        var result = response.GetProperty("result");
+        Assert.Equal("n1:4", result.GetProperty("nodeId").GetString());
+        Assert.Equal("Hello world", result.GetProperty("text").GetString());
+        Assert.Equal(11, result.GetProperty("length").GetInt32());
+        Assert.False(result.GetProperty("truncated").GetBoolean());
+    }
+
+    [Fact]
+    public async Task WaitPassesTheConditionAndReturnsTheMatchingWindow()
+    {
+        var raw = NotepadRawWindow();
+        var harness = NewSelectionHarness(new FakeUiaWalker(), new FakeWindowCapture(), raw);
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request(
+                "wait",
+                """{"condition":{"kind":"window","process":"Notepad"},"present":true,"timeoutMs":5000,"pollMs":100}"""));
+
+        var result = response.GetProperty("result");
+        Assert.Equal(100, result.GetProperty("window").GetProperty("pid").GetInt32());
+        var condition = result.GetProperty("condition");
+        Assert.Equal("window", condition.GetProperty("kind").GetString());
+        Assert.Equal("Notepad", condition.GetProperty("process").GetString());
+        Assert.Equal(0L, result.GetProperty("elapsedMs").GetInt64());
+
+        // A window condition needs no selection and never walks a tree.
+        Assert.Equal(0, harness.Walker.Calls);
+        Assert.Empty(harness.Clock.Delays);
+    }
+
+    [Fact]
+    public async Task WaitTimeoutMapsToActionTimeoutNamingTheCondition()
+    {
+        var harness = NewSelectionHarness(new FakeUiaWalker(), new FakeWindowCapture(), NotepadRawWindow());
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("wait", """{"condition":{"kind":"window","process":"Missing"},"timeoutMs":5}"""));
+
+        Assert.Equal("ACTION_TIMEOUT", ErrorCodeOf(response));
+        Assert.Contains(
+            "5 ms",
+            response.GetProperty("error").GetProperty("message").GetString());
+    }
+
+    [Fact]
+    public async Task ActionBatchReturnsPerStepResultsAndTheFailedIndex()
+    {
+        var raw = NotepadRawWindow();
+        var target = EditTarget();
+        var live = FakeUiaNode.From(target) with { Text = "Batch text" };
+        var harness = NewSelectionHarness(
+            new FakeUiaWalker(),
+            new FakeWindowCapture(),
+            exclusions: null,
+            perception: null,
+            desktop: null,
+            api: null,
+            liveNode: live,
+            windows: [raw]);
+        var info = harness.Registry.Register(raw);
+        harness.Selection.Select(info);
+        harness.SaveNode("n1:4", target);
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request(
+                "action.batch",
+                """
+                {"steps":[
+                  {"kind":"key","keys":"Enter"},
+                  {"kind":"readText","nodeId":"n1:4"},
+                  {"kind":"click","nodeId":"n2:4"},
+                  {"kind":"key","keys":"Tab"}
+                ]}
+                """));
+
+        var result = response.GetProperty("result");
+        Assert.Equal(2, result.GetProperty("failedIndex").GetInt32());
+
+        var steps = result.GetProperty("steps");
+        Assert.Equal(3, steps.GetArrayLength());
+
+        Assert.Equal(0, steps[0].GetProperty("index").GetInt32());
+        Assert.Equal("key", steps[0].GetProperty("kind").GetString());
+        Assert.True(steps[0].GetProperty("ok").GetBoolean());
+        Assert.Equal("key", steps[0].GetProperty("data").GetProperty("action").GetString());
+
+        Assert.Equal(1, steps[1].GetProperty("index").GetInt32());
+        Assert.Equal("readText", steps[1].GetProperty("kind").GetString());
+        Assert.True(steps[1].GetProperty("ok").GetBoolean());
+        Assert.Equal("Batch text", steps[1].GetProperty("data").GetProperty("text").GetString());
+
+        Assert.Equal(2, steps[2].GetProperty("index").GetInt32());
+        Assert.False(steps[2].GetProperty("ok").GetBoolean());
+        Assert.Equal("STALE_SNAPSHOT", steps[2].GetProperty("code").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(steps[2].GetProperty("message").GetString()));
+        Assert.False(steps[2].TryGetProperty("data", out _));
+
+        // The fourth step never ran.
+        Assert.Equal(["KeyDown:13", "KeyUp:13"], harness.Input.Calls);
+    }
+
+    [Fact]
+    public async Task ActionBatchIncludesWaitStepDataWithItsCondition()
+    {
+        var harness = NewSelectionHarness(new FakeUiaWalker(), new FakeWindowCapture(), NotepadRawWindow());
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request(
+                "action.batch",
+                """{"steps":[{"kind":"wait","condition":{"kind":"window","process":"Notepad"},"timeoutMs":1000}]}"""));
+
+        var step = Assert.Single(
+            response.GetProperty("result").GetProperty("steps").EnumerateArray());
+        Assert.True(step.GetProperty("ok").GetBoolean());
+
+        var data = step.GetProperty("data");
+        Assert.Equal("window", data.GetProperty("condition").GetProperty("kind").GetString());
+        Assert.Equal("Notepad", data.GetProperty("condition").GetProperty("process").GetString());
+        Assert.Equal(100, data.GetProperty("window").GetProperty("pid").GetInt32());
+    }
+
+    [Fact]
+    public async Task AStoppedWaitReturnsActionTimeoutWithTheStopMessage()
+    {
+        var harness = NewSelectionHarness(new FakeUiaWalker(), new FakeWindowCapture(), NotepadRawWindow());
+        harness.Clock.OnDelay = _ => harness.Control.Stop();
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("wait", """{"condition":{"kind":"window","process":"Missing"},"timeoutMs":60000}"""));
+
+        Assert.Equal("ACTION_TIMEOUT", ErrorCodeOf(response));
+        Assert.Equal(
+            "The operation was stopped.",
+            response.GetProperty("error").GetProperty("message").GetString());
+        Assert.Single(harness.Clock.Delays);
+    }
+
+    [Fact]
+    public async Task ABatchStoppedInsideAStepReturnsActionTimeoutWithoutPartialResults()
+    {
+        var harness = NewSelectionHarness(new FakeUiaWalker(), new FakeWindowCapture(), NotepadRawWindow());
+        harness.Clock.OnDelay = _ => harness.Control.Stop();
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request(
+                "action.batch",
+                """{"steps":[{"kind":"wait","condition":{"kind":"window","process":"Missing"},"timeoutMs":60000}]}"""));
+
+        Assert.Equal("ACTION_TIMEOUT", ErrorCodeOf(response));
+        Assert.Equal(
+            "The operation was stopped.",
+            response.GetProperty("error").GetProperty("message").GetString());
+        Assert.False(response.TryGetProperty("result", out _));
     }
 
     [Fact]
@@ -757,6 +1195,25 @@ public sealed class DispatcherTests
         => JsonDocument.Parse(
             $$"""{"jsonrpc":"2.0","id":2,"method":"{{method}}","params":{{parametersJson}}}""").RootElement;
 
+    private static string? ErrorCodeOf(JsonElement response)
+        => response.GetProperty("error").GetProperty("data").GetProperty("code").GetString();
+
+    private static TreeModel ButtonTarget() => new()
+    {
+        Role = "button",
+        Name = "Send",
+        Bounds = new Rect(10, 20, 120, 32),
+        Actions = ["press"],
+    };
+
+    private static TreeModel EditTarget() => new()
+    {
+        Role = "edit",
+        Name = "Message",
+        Bounds = new Rect(10, 20, 200, 40),
+        Actions = ["setValue"],
+    };
+
     private static SelectionHarness NewSelectionHarness(params RawWindow[] windows)
         => NewSelectionHarness(new FakeUiaWalker(), new FakeWindowCapture(), windows);
 
@@ -783,13 +1240,19 @@ public sealed class DispatcherTests
         PerceptionConfig? perception,
         FakeDesktopState? desktop,
         FakeWindowApi? api,
+        IUiaNode? liveNode = null,
+        bool foregroundSucceeds = true,
         params RawWindow[] windows)
     {
         var tokens = TokenStore.CreateForTests(NewTempDir());
         tokens.Rotate();
         api ??= new FakeWindowApi(windows);
         var registry = new WindowRegistry(api, exclusions);
-        var focus = new FakeWin32();
+        var focus = new FakeWin32
+        {
+            InitialForeground = 99,
+            ForegroundSucceeds = foregroundSucceeds,
+        };
         var enumerator = new WindowEnumerator(api, registry, exclusions);
         var selectionStore = new SelectionStore();
         var selection = new SelectionService(
@@ -801,6 +1264,23 @@ public sealed class DispatcherTests
             pid => $@"C:\tests\{pid}.exe");
         var fakeWalker = walker as FakeUiaWalker ?? new FakeUiaWalker();
         var snapshots = new SnapshotStore();
+        var snapshotter = NewSnapshotter(walker, capture);
+        var input = new FakeInputSender();
+        var clipboard = new FakeClipboard();
+        var clock = new DispatcherWaitClock();
+        var control = new ControlSession();
+        var actions = NewActions(
+            walker,
+            focus,
+            registry,
+            enumerator,
+            selectionStore,
+            snapshots,
+            snapshotter,
+            input,
+            clipboard,
+            clock,
+            liveNode);
         var dispatcher = new JsonRpcDispatcher(
             tokens,
             new FakeMonitorProvider(),
@@ -808,9 +1288,17 @@ public sealed class DispatcherTests
             enumerator,
             selection,
             registry,
-            NewSnapshotter(walker, capture),
+            snapshotter,
             snapshots,
-            new ControlSession(),
+            control,
+            actions.Click,
+            actions.Type,
+            actions.Key,
+            actions.Scroll,
+            actions.Wait,
+            actions.ReadText,
+            actions.Find,
+            actions.Batch,
             perception);
 
         return new SelectionHarness(
@@ -821,7 +1309,11 @@ public sealed class DispatcherTests
             capture,
             api,
             selectionStore,
-            snapshots);
+            snapshots,
+            control,
+            input,
+            clipboard,
+            clock);
     }
 
     private static JsonRpcDispatcher NewDispatcher(
@@ -832,12 +1324,30 @@ public sealed class DispatcherTests
         var api = new FakeWindowApi();
         var registry = new WindowRegistry(api);
         var enumerator = new WindowEnumerator(api, registry);
+        var selectionStore = new SelectionStore();
         var selection = new SelectionService(
             registry,
             new AllowAllAuthorization(),
-            new SelectionStore(),
+            selectionStore,
             windows: enumerator,
             processPathResolver: pid => $@"C:\tests\{pid}.exe");
+        var walker = new FakeUiaWalker();
+        var focus = new FakeWin32();
+        var snapshots = new SnapshotStore();
+        var snapshotter = NewSnapshotter(walker);
+        var actions = NewActions(
+            walker,
+            focus,
+            registry,
+            enumerator,
+            selectionStore,
+            snapshots,
+            snapshotter,
+            new FakeInputSender(),
+            new FakeClipboard(),
+            new DispatcherWaitClock(),
+            liveNode: null);
+
         return new(
             tokens,
             new FakeMonitorProvider(),
@@ -845,9 +1355,65 @@ public sealed class DispatcherTests
             enumerator,
             selection,
             registry,
-            NewSnapshotter(new FakeUiaWalker()),
-            new SnapshotStore(),
-            control ?? new ControlSession());
+            snapshotter,
+            snapshots,
+            control ?? new ControlSession(),
+            actions.Click,
+            actions.Type,
+            actions.Key,
+            actions.Scroll,
+            actions.Wait,
+            actions.ReadText,
+            actions.Find,
+            actions.Batch);
+    }
+
+    /// <summary>
+    /// Builds every M2 action service from the same fakes the dispatcher tests
+    /// already use, so no action can reach a real desktop, input sender, or
+    /// clipboard.
+    /// </summary>
+    private static ActionDependencies NewActions(
+        IUiaWalker walker,
+        FakeWin32 focus,
+        WindowRegistry registry,
+        WindowEnumerator enumerator,
+        SelectionStore selection,
+        SnapshotStore snapshots,
+        UiaSnapshotter snapshotter,
+        FakeInputSender input,
+        FakeClipboard clipboard,
+        DispatcherWaitClock clock,
+        IUiaNode? liveNode)
+    {
+        var resolver = new FakeUiaNodeResolver(liveNode);
+        var preflight = new ActionPreflight(
+            new ForegroundService(focus),
+            selection,
+            registry,
+            new ExpectEvaluator(walker, focus),
+            TimeSpan.FromMilliseconds(10));
+
+        var click = new ClickAction(resolver, preflight, input, snapshots);
+        var type = new TypeAction(resolver, preflight, input, clipboard, snapshots);
+        var key = new KeyAction(preflight, input);
+        var scroll = new ScrollAction(resolver, preflight, input, snapshots);
+        var wait = new WaitAction(walker, enumerator, selection, registry, clock);
+        var readText = new ReadTextAction(resolver, snapshots, selection, registry);
+        var find = new FindAction(walker, snapshotter, snapshots, selection, registry);
+        var batch = new BatchAction(
+            click,
+            type,
+            key,
+            scroll,
+            wait,
+            readText,
+            snapshotter,
+            snapshots,
+            selection,
+            registry);
+
+        return new ActionDependencies(click, type, key, scroll, wait, readText, find, batch);
     }
 
     private static UiaSnapshotter NewSnapshotter(IUiaWalker walker, FakeWindowCapture? capture = null)
@@ -855,6 +1421,16 @@ public sealed class DispatcherTests
         WindowCapture? captureImage = capture is null ? null : capture.Capture;
         return new(walker, _ => { }, _ => { }, captureImage);
     }
+
+    private sealed record ActionDependencies(
+        ClickAction Click,
+        TypeAction Type,
+        KeyAction Key,
+        ScrollAction Scroll,
+        WaitAction Wait,
+        ReadTextAction ReadText,
+        FindAction Find,
+        BatchAction Batch);
 
     private sealed record SelectionHarness(
         JsonRpcDispatcher Dispatcher,
@@ -864,7 +1440,53 @@ public sealed class DispatcherTests
         FakeWindowCapture Capture,
         FakeWindowApi Api,
         SelectionStore Selection,
-        SnapshotStore Snapshots);
+        SnapshotStore Snapshots,
+        ControlSession Control,
+        FakeInputSender Input,
+        FakeClipboard Clipboard,
+        DispatcherWaitClock Clock)
+    {
+        /// <summary>Stores a snapshot generation with one addressable node.</summary>
+        public void SaveNode(string nodeId, TreeModel node, int generation = 1)
+        {
+            var selected = Selection.Selected
+                ?? throw new InvalidOperationException(
+                    "SaveNode requires the harness to have selected a window.");
+            Snapshots.Save(
+                selected.WindowId,
+                new Snapshot { Generation = generation },
+                new Dictionary<string, TreeModel>(StringComparer.Ordinal)
+                {
+                    [nodeId] = node,
+                },
+                selected.Bounds);
+        }
+    }
+
+    /// <summary>
+    /// A clock that never sleeps: each delay advances the fake time and may run
+    /// a hook, so a test can stop the control session between polls.
+    /// </summary>
+    private sealed class DispatcherWaitClock : IWaitClock
+    {
+        private readonly List<TimeSpan> _delays = [];
+
+        public DateTimeOffset UtcNow { get; private set; } =
+            new(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
+
+        public IReadOnlyList<TimeSpan> Delays => _delays;
+
+        public Action<int>? OnDelay { get; set; }
+
+        public Task Delay(TimeSpan delay, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _delays.Add(delay);
+            UtcNow += delay;
+            OnDelay?.Invoke(_delays.Count);
+            return Task.CompletedTask;
+        }
+    }
 
     private static string NewTempDir()
     {
