@@ -239,7 +239,7 @@ Hidden/offscreen/disabled nodes are filtered by default. Interactive nodes and t
 
 ### Focus and foreground rules
 
-- Before input, the host verifies the target window is foreground; if not, it activates the window and re-verifies.
+- Before input, the host verifies the target window is foreground; if not, it activates the window — attach to the foreground and target input queues, restore if minimized, bring to top, set foreground and focus — and re-verifies.
 - Windows may refuse foreground changes (foreground lock); macOS may keep another app frontmost or the target may be on another Space. The host retries once, then returns `FOCUS_REFUSED` rather than typing into the wrong app.
 
 ### Authorization and consequential actions
@@ -393,7 +393,7 @@ Protocol vocabulary is platform-neutral: `windowId` is an opaque string, node fi
 | Capture | Window: `PrintWindow(PW_RENDERFULLCONTENT)` first, `Windows.Graphics.Capture` when available; monitor/desktop: `BitBlt` or WGC. Fallback `CopyFromScreen`. |
 | Input | `SendInput` for mouse/keyboard; never `keybd_event`/`mouse_event`. Unicode typing via `KEYEVENTF_UNICODE`. |
 | DPI | `SetProcessDpiAwarenessContext(PER_MONITOR_AWARE_V2)`; convert client/screen/image coordinates explicitly. |
-| Focus | `SetForegroundWindow` with the `AttachThreadInput` workaround; verify foreground after. |
+| Focus | Attach to the foreground and target input queues; restore, `BringWindowToTop`, `SetForegroundWindow`, `SetFocus`; verify foreground after. |
 | Lock/UAC | Fail closed when the input desktop is not the default desktop or the session is locked. |
 | OCR | `Windows.Media.Ocr` (local, language packs); optional Tesseract. |
 | Tray | WinForms `NotifyIcon`; global hotkey via `RegisterHotKey`. |

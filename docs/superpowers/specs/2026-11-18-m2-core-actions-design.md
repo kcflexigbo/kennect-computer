@@ -235,8 +235,10 @@ The existing `NodeId`/`SnapshotStore` generation rules remain the authority.
 
 ### 6.12 Focus, stop, and concurrency
 
-- Reuse `ForegroundService`: activate, verify, retry once, then
-  `FOCUS_REFUSED`; never send input to an unverified window.
+- Reuse `ForegroundService`: activate with the attach-input recipe (attach to
+  the foreground and target input queues, restore, bring to top, set foreground
+  and focus), verify, retry once, then `FOCUS_REFUSED`; never send input to an
+  unverified window.
 - Every input action checks the control token before each event/step; a stop
   aborts the sequence and returns `ACTION_TIMEOUT` with "The operation was
   stopped." (the existing M1 mapping).

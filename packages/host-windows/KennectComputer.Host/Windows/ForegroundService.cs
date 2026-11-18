@@ -12,6 +12,10 @@ public interface IForegroundApi
 {
     bool SetForegroundWindow(nint hwnd);
 
+    bool BringWindowToTop(nint hwnd);
+
+    nint SetFocus(nint hwnd);
+
     nint GetForegroundWindow();
 
     uint GetCurrentThreadId();
@@ -32,6 +36,10 @@ public sealed class WindowsForegroundApi : IForegroundApi
 
     public bool SetForegroundWindow(nint hwnd) => SetForegroundWindowNative(hwnd);
 
+    public bool BringWindowToTop(nint hwnd) => BringWindowToTopNative(hwnd);
+
+    public nint SetFocus(nint hwnd) => SetFocusNative(hwnd);
+
     public nint GetForegroundWindow() => GetForegroundWindowNative();
 
     public uint GetCurrentThreadId() => GetCurrentThreadIdNative();
@@ -49,6 +57,13 @@ public sealed class WindowsForegroundApi : IForegroundApi
     [DllImport("user32.dll", EntryPoint = "SetForegroundWindow", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetForegroundWindowNative(nint hwnd);
+
+    [DllImport("user32.dll", EntryPoint = "BringWindowToTop", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool BringWindowToTopNative(nint hwnd);
+
+    [DllImport("user32.dll", EntryPoint = "SetFocus", SetLastError = true)]
+    private static extern nint SetFocusNative(nint hwnd);
 
     [DllImport("user32.dll", EntryPoint = "GetForegroundWindow")]
     private static extern nint GetForegroundWindowNative();
@@ -74,10 +89,12 @@ public sealed class WindowsForegroundApi : IForegroundApi
 
 /// <summary>
 /// Brings a window to the foreground using the <c>AttachThreadInput</c>
-/// workaround, verifies <c>GetForegroundWindow</c> rather than trusting the
-/// return value, retries once (DESIGN §6), then refuses with
-/// <c>FOCUS_REFUSED</c>. Input is never sent to a window that was not verified
-/// foreground.
+/// workaround: attach to both the current foreground and target input queues,
+/// restore a minimized target, bring it to the top, set foreground, and focus
+/// it. Verifies <c>GetForegroundWindow</c> rather than trusting the return
+/// value, retries once (DESIGN §6), then refuses with <c>FOCUS_REFUSED</c>.
+/// An already-foreground target is accepted without activating it. Input is
+/// never sent to a window that was not verified foreground.
 /// </summary>
 public sealed class ForegroundService
 {
@@ -96,6 +113,11 @@ public sealed class ForegroundService
         if (hwnd == 0)
         {
             return FocusResult.Failed(ErrorCode.WindowGone);
+        }
+
+        if (_api.GetForegroundWindow() == hwnd)
+        {
+            return FocusResult.Success;
         }
 
         for (var attempt = 0; attempt < MaxAttempts; attempt++)
@@ -118,10 +140,15 @@ public sealed class ForegroundService
         var foregroundThread = foreground == 0
             ? 0
             : _api.GetWindowThreadProcessId(foreground, out _);
+        var targetThread = _api.GetWindowThreadProcessId(hwnd, out _);
 
-        var attached = foregroundThread != 0
+        var attachedForeground = foregroundThread != 0
             && foregroundThread != currentThread
             && _api.AttachThreadInput(currentThread, foregroundThread, attach: true);
+        var attachedTarget = targetThread != 0
+            && targetThread != currentThread
+            && targetThread != foregroundThread
+            && _api.AttachThreadInput(currentThread, targetThread, attach: true);
 
         try
         {
@@ -130,11 +157,18 @@ public sealed class ForegroundService
                 _api.RestoreWindow(hwnd);
             }
 
+            _api.BringWindowToTop(hwnd);
             _api.SetForegroundWindow(hwnd);
+            _api.SetFocus(hwnd);
         }
         finally
         {
-            if (attached)
+            if (attachedTarget)
+            {
+                _api.AttachThreadInput(currentThread, targetThread, attach: false);
+            }
+
+            if (attachedForeground)
             {
                 _api.AttachThreadInput(currentThread, foregroundThread, attach: false);
             }

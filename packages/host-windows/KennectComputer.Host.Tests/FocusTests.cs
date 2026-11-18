@@ -8,12 +8,14 @@ public sealed class FocusTests
     [Fact]
     public async Task ReturnsFocusRefusedWhenForegroundCannotBeSet()
     {
-        var service = new ForegroundService(new FakeWin32 { ForegroundSucceeds = false });
+        var api = new FakeWin32 { ForegroundSucceeds = false };
+        var service = new ForegroundService(api);
 
         var result = await service.FocusAsync((nint)1, TimeSpan.FromMilliseconds(50));
 
         Assert.False(result.Ok);
         Assert.Equal(ErrorCode.FocusRefused, result.Error);
+        Assert.Equal(api.AttachCalls, api.DetachCalls);
     }
 
     [Fact]
@@ -27,9 +29,45 @@ public sealed class FocusTests
         Assert.True(result.Ok);
         Assert.Null(result.Error);
         Assert.Equal(1, api.SetForegroundCalls);
+        Assert.Equal(2, api.AttachCalls);
+        Assert.Equal(2, api.DetachCalls);
+        Assert.Equal(1, api.BringToTopCalls);
+        Assert.Equal(1, api.SetFocusCalls);
+        Assert.Equal((nint)42, api.CurrentForeground);
+    }
+
+    [Fact]
+    public async Task AcceptsAnAlreadyForegroundTargetWithoutActivating()
+    {
+        var api = new FakeWin32 { InitialForeground = (nint)42 };
+
+        var result = await new ForegroundService(api)
+            .FocusAsync((nint)42, TimeSpan.FromMilliseconds(500));
+
+        Assert.True(result.Ok);
+        Assert.Equal(0, api.SetForegroundCalls);
+        Assert.Equal(0, api.AttachCalls);
+        Assert.Equal(0, api.BringToTopCalls);
+        Assert.Equal(0, api.SetFocusCalls);
+    }
+
+    [Fact]
+    public async Task DoesNotAttachToTheSameThreadTwice()
+    {
+        var api = new FakeWin32
+        {
+            InitialForeground = (nint)99,
+            CurrentThreadId = 30,
+            ForegroundThreadId = 30,
+            WindowThreadId = 20,
+        };
+
+        var result = await new ForegroundService(api)
+            .FocusAsync((nint)42, TimeSpan.FromMilliseconds(500));
+
+        Assert.True(result.Ok);
         Assert.Equal(1, api.AttachCalls);
         Assert.Equal(1, api.DetachCalls);
-        Assert.Equal((nint)42, api.CurrentForeground);
     }
 
     [Fact]
@@ -77,6 +115,8 @@ public sealed class FocusTests
 
         Assert.NotEqual(0u, api.GetCurrentThreadId());
         _ = api.GetForegroundWindow();
+        _ = api.BringWindowToTop(0);
+        _ = api.SetFocus(0);
         Assert.False(api.IsIconic(0));
     }
 }
@@ -108,6 +148,8 @@ internal sealed class FakeWin32 : IForegroundApi
 
     public uint CurrentThreadId { get; init; } = 10;
 
+    public uint ForegroundThreadId { get; init; } = 30;
+
     public uint WindowThreadId { get; init; } = 20;
 
     public int SetForegroundCalls => _setForegroundCalls;
@@ -117,6 +159,10 @@ internal sealed class FakeWin32 : IForegroundApi
     public int DetachCalls { get; private set; }
 
     public int RestoreCalls { get; private set; }
+
+    public int BringToTopCalls { get; private set; }
+
+    public int SetFocusCalls { get; private set; }
 
     public nint CurrentForeground => _foreground;
 
@@ -139,7 +185,19 @@ internal sealed class FakeWin32 : IForegroundApi
     public uint GetWindowThreadProcessId(nint hwnd, out uint processId)
     {
         processId = 7;
-        return WindowThreadId;
+        return hwnd == _initialForeground ? ForegroundThreadId : WindowThreadId;
+    }
+
+    public bool BringWindowToTop(nint hwnd)
+    {
+        BringToTopCalls++;
+        return true;
+    }
+
+    public nint SetFocus(nint hwnd)
+    {
+        SetFocusCalls++;
+        return 0;
     }
 
     public bool AttachThreadInput(uint idAttach, uint idAttachTo, bool attach)
