@@ -492,6 +492,15 @@ const snapshotInputSchema = z
     maxDepth: z.number().int().min(1).optional(),
     maxNodes: z.number().int().min(1).optional(),
     image: z.boolean().optional(),
+    region: z
+      .object({
+        x: z.number().int().min(0),
+        y: z.number().int().min(0),
+        width: z.number().int().min(1),
+        height: z.number().int().min(1),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -505,8 +514,11 @@ function createSnapshotDefinition(provider: HostProvider): ToolDefinition {
       + "windowId is required; mode may be a11y, vision, or both; maxDepth and maxNodes cap the "
       + "outline. Set image to true to also return a downscaled PNG as image content, carrying "
       + "scale and sourceBounds so image coordinates map back to the window; structuredContent "
-      + "carries only the image metadata (no bytes). The outline is returned as text. The only "
-      + "side effect is that a minimized target may be restored so its pixels can be captured.",
+      + "carries only the image metadata (no bytes). region crops the previously returned image: "
+      + "x, y, width, and height are pixels in that image, the window must not have moved, and the "
+      + "result is a native-scale crop that becomes the current image for later coordinates. The "
+      + "outline is returned as text. The only side effect is that a minimized target may be "
+      + "restored so its pixels can be captured.",
     inputSchema: snapshotInputSchema,
     inputJsonSchema: {
       type: "object",
@@ -516,6 +528,17 @@ function createSnapshotDefinition(provider: HostProvider): ToolDefinition {
         maxDepth: { type: "integer", minimum: 1 },
         maxNodes: { type: "integer", minimum: 1 },
         image: { type: "boolean" },
+        region: {
+          type: "object",
+          properties: {
+            x: { type: "integer", minimum: 0 },
+            y: { type: "integer", minimum: 0 },
+            width: { type: "integer", minimum: 1 },
+            height: { type: "integer", minimum: 1 },
+          },
+          required: ["x", "y", "width", "height"],
+          additionalProperties: false,
+        },
       },
       required: ["windowId"],
       additionalProperties: false,

@@ -23,7 +23,8 @@ public delegate ImagePayload? WindowCapture(
     Rect bounds,
     int imageLongEdge,
     bool enabled,
-    int maxImageLongEdge);
+    int maxImageLongEdge,
+    Rect? crop);
 
 /// <summary>A snapshot plus the node map needed to act on its node IDs later.</summary>
 public sealed record SnapshotCapture(
@@ -187,7 +188,8 @@ public sealed class UiaSnapshotter
                 bounds,
                 options.ImageLongEdge,
                 enabled: true,
-                options.MaxImageLongEdge)
+                options.MaxImageLongEdge,
+                options.CaptureRegion)
             : null;
 
     private static bool AnyVisibleModal(TreeModel node)

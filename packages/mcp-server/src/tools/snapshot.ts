@@ -14,12 +14,21 @@ export type SnapshotMode = (typeof SNAPSHOT_MODES)[number];
 /** Mirrors the host's generic `SnapshotOptions.MaxDepth` default. */
 export const DEFAULT_SNAPSHOT_MAX_DEPTH = 12;
 
+/** A crop rectangle in the previous snapshot image's pixel space. */
+export interface SnapshotRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface SnapshotArgs {
   windowId: string;
   mode?: SnapshotMode;
   maxDepth?: number;
   maxNodes?: number;
   image?: boolean;
+  region?: SnapshotRegion;
 }
 
 export interface SnapshotData {
@@ -60,6 +69,9 @@ export async function snapshotTool(
   }
   if (args.image !== undefined) {
     params.image = args.image;
+  }
+  if (args.region !== undefined) {
+    params.region = args.region;
   }
 
   try {

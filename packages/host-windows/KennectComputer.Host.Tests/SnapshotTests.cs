@@ -383,9 +383,10 @@ internal sealed class FakeWindowCapture
         Rect bounds,
         int imageLongEdge,
         bool enabled,
-        int maxImageLongEdge)
+        int maxImageLongEdge,
+        Rect? crop)
     {
-        Calls.Add(new CaptureCall(hwnd, bounds, imageLongEdge, enabled, maxImageLongEdge));
+        Calls.Add(new CaptureCall(hwnd, bounds, imageLongEdge, enabled, maxImageLongEdge, crop));
         return enabled ? _payload : null;
     }
 }
@@ -395,7 +396,8 @@ internal sealed record CaptureCall(
     Rect Bounds,
     int ImageLongEdge,
     bool Enabled,
-    int MaxImageLongEdge);
+    int MaxImageLongEdge,
+    Rect? Crop);
 
 internal static class SampleImages
 {

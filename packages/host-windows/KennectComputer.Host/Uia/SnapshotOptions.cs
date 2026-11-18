@@ -1,3 +1,5 @@
+using KennectComputer.Host.Protocol;
+
 namespace KennectComputer.Host.Uia;
 
 /// <summary>Which perception layers a snapshot should produce.</summary>
@@ -35,6 +37,13 @@ public sealed record SnapshotOptions
     public int ImageLongEdge { get; init; } = DefaultImageLongEdge;
 
     public int MaxImageLongEdge { get; init; } = DefaultMaxImageLongEdge;
+
+    /// <summary>
+    /// Physical screen rectangle to crop from the captured window. Set by the
+    /// dispatcher for a region snapshot; the returned image is native-scale
+    /// and its <c>sourceBounds</c> is this rectangle.
+    /// </summary>
+    public Rect? CaptureRegion { get; init; }
 
     public SnapshotMode Mode { get; init; } = SnapshotMode.Both;
 }

@@ -48,7 +48,8 @@ public static class ScreenCapture
         Rect bounds,
         int imageLongEdge = SnapshotOptions.DefaultImageLongEdge,
         bool enabled = true,
-        int maxImageLongEdge = SnapshotOptions.DefaultMaxImageLongEdge)
+        int maxImageLongEdge = SnapshotOptions.DefaultMaxImageLongEdge,
+        Rect? crop = null)
     {
         if (!enabled
             || hwnd == nint.Zero
@@ -62,14 +63,57 @@ public static class ScreenCapture
         try
         {
             using var bitmap = TryPrintWindow(hwnd, bounds) ?? TryCopyFromScreen(hwnd, bounds);
-            return bitmap is null
-                ? null
-                : Encode(bitmap, imageLongEdge, bounds, maxImageLongEdge);
+            if (bitmap is null)
+            {
+                return null;
+            }
+
+            return crop is null
+                ? Encode(bitmap, imageLongEdge, bounds, maxImageLongEdge)
+                : EncodeRegion(bitmap, bounds, crop, maxImageLongEdge);
         }
         catch (Exception)
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// Crops <paramref name="crop"/> out of a window bitmap and encodes it at
+    /// native scale (only the protocol maximum can force a downscale). The
+    /// payload's <c>sourceBounds</c> is the crop's physical rectangle.
+    /// </summary>
+    internal static ImagePayload? EncodeRegion(
+        Bitmap bitmap,
+        Rect sourceBounds,
+        Rect crop,
+        int maxImageLongEdge = SnapshotOptions.DefaultMaxImageLongEdge)
+    {
+        ArgumentNullException.ThrowIfNull(bitmap);
+        ArgumentNullException.ThrowIfNull(sourceBounds);
+        ArgumentNullException.ThrowIfNull(crop);
+
+        var local = new Rectangle(
+            crop.X - sourceBounds.X,
+            crop.Y - sourceBounds.Y,
+            crop.Width,
+            crop.Height);
+        if (local.X < 0
+            || local.Y < 0
+            || local.Width <= 0
+            || local.Height <= 0
+            || local.X + local.Width > bitmap.Width
+            || local.Y + local.Height > bitmap.Height)
+        {
+            return null;
+        }
+
+        using var cropped = bitmap.Clone(local, bitmap.PixelFormat);
+        return Encode(
+            cropped,
+            Math.Max(crop.Width, crop.Height),
+            crop,
+            maxImageLongEdge);
     }
 
     /// <summary>

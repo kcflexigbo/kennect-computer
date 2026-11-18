@@ -1127,6 +1127,73 @@ public sealed class DispatcherTests
     }
 
     [Fact]
+    public async Task ARegionSnapshotCropsInsideThePreviousSnapshotImage()
+    {
+        var raw = new RawWindow(1, 100, "Notepad", "Notepad", new Rect(0, 0, 800, 600))
+        {
+            ClassName = "NotepadClass",
+        };
+        var capture = new FakeWindowCapture(SampleImages.Payload());
+        var harness = NewSelectionHarness(
+            new FakeUiaWalker(),
+            capture,
+            exclusions: null,
+            perception: null,
+            desktop: null,
+            api: null,
+            windows: [raw]);
+        var info = harness.Registry.Register(raw);
+
+        var first = await harness.Dispatcher.HandleAsync(
+            Request("snapshot", $$"""{"windowId":"{{info.WindowId}}","image":true}"""));
+        Assert.True(first.TryGetProperty("result", out _));
+
+        var second = await harness.Dispatcher.HandleAsync(
+            Request(
+                "snapshot",
+                $$$"""{"windowId":"{{{info.WindowId}}}","region":{"x":10,"y":20,"width":100,"height":50}}"""));
+        Assert.True(second.TryGetProperty("result", out _));
+
+        Assert.Equal(2, capture.Calls.Count);
+        var crop = capture.Calls[1].Crop;
+        Assert.NotNull(crop);
+
+        // The stored image is 800x600 at scale 1.5 (source bounds 0,0), so the
+        // requested image-space region maps to 15,30 with size 150x75.
+        Assert.Equal(15, crop!.X);
+        Assert.Equal(30, crop.Y);
+        Assert.Equal(150, crop.Width);
+        Assert.Equal(75, crop.Height);
+    }
+
+    [Fact]
+    public async Task ARegionSnapshotWithoutAPreviousImageIsInvalid()
+    {
+        var raw = new RawWindow(1, 100, "Notepad", "Notepad", new Rect(0, 0, 800, 600))
+        {
+            ClassName = "NotepadClass",
+        };
+        var harness = NewSelectionHarness(
+            new FakeUiaWalker(),
+            new FakeWindowCapture(SampleImages.Payload()),
+            exclusions: null,
+            perception: null,
+            desktop: null,
+            api: null,
+            windows: [raw]);
+        var info = harness.Registry.Register(raw);
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request(
+                "snapshot",
+                $$$"""{"windowId":"{{{info.WindowId}}}","region":{"x":0,"y":0,"width":10,"height":10}}"""));
+
+        Assert.Equal(
+            "INVALID_REQUEST",
+            response.GetProperty("error").GetProperty("data").GetProperty("code").GetString());
+    }
+
+    [Fact]
     public async Task SnapshotUsesTheConfiguredDefaultMode()
     {
         var harness = NewSelectionHarness(

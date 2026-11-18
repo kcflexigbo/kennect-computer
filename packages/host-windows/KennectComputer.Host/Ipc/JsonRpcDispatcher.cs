@@ -36,6 +36,9 @@ public sealed class JsonRpcDispatcher
     private const int MaxSelectorTextLength = 1000;
     private const int MaxTypeTextLength = 100_000;
 
+    /// <summary>A crop rectangle in the previous snapshot image's pixel space.</summary>
+    private readonly record struct SnapshotRegion(int X, int Y, int Width, int Height);
+
     private readonly TokenStore _tokens;
     private readonly IMonitorProvider _monitors;
     private readonly IDesktopState _desktop;
@@ -430,6 +433,21 @@ public sealed class JsonRpcDispatcher
             image = imageElement.GetBoolean();
         }
 
+        SnapshotRegion? region = null;
+        if (parameters.TryGetProperty("region", out var regionElement))
+        {
+            if (!TryParseSnapshotRegion(regionElement, out var parsedRegion))
+            {
+                return Error(
+                    id,
+                    InvalidRequestCode,
+                    "region must be an object with non-negative x and y and positive width and height integers.",
+                    "INVALID_REQUEST");
+            }
+
+            region = parsedRegion;
+        }
+
         if (_desktop.IsLocked())
         {
             return DesktopUnavailableError(id);
@@ -445,6 +463,75 @@ public sealed class JsonRpcDispatcher
             return Error(id, ActionErrorCode, "The window is gone.", "WINDOW_GONE");
         }
 
+        Rect? captureRegion = null;
+        if (region is { } requested)
+        {
+            if (!_snapshots.TryGetState(windowId, out var state)
+                || state?.Image is not { } imageMetadata)
+            {
+                return Error(
+                    id,
+                    InvalidRequestCode,
+                    "A region snapshot requires a previous snapshot with an image.",
+                    "INVALID_REQUEST");
+            }
+
+            if (!SameBounds(state.WindowBounds, resolved.Info.Bounds))
+            {
+                return Error(
+                    id,
+                    ActionErrorCode,
+                    "The window moved or resized since the snapshot; take a new snapshot before cropping.",
+                    "STALE_SNAPSHOT");
+            }
+
+            var scale = imageMetadata.Scale;
+            if (!double.IsFinite(scale) || scale <= 0)
+            {
+                return Error(
+                    id,
+                    InvalidRequestCode,
+                    "The previous snapshot image has no usable scale.",
+                    "INVALID_REQUEST");
+            }
+
+            var imageWidth = imageMetadata.SourceBounds.Width / scale;
+            var imageHeight = imageMetadata.SourceBounds.Height / scale;
+            if (requested.X + requested.Width > imageWidth + 0.5
+                || requested.Y + requested.Height > imageHeight + 0.5)
+            {
+                return Error(
+                    id,
+                    InvalidRequestCode,
+                    "region must lie inside the previous snapshot image.",
+                    "INVALID_REQUEST");
+            }
+
+            var physical = new Rect(
+                (int)Math.Round(imageMetadata.SourceBounds.X + (requested.X * scale)),
+                (int)Math.Round(imageMetadata.SourceBounds.Y + (requested.Y * scale)),
+                Math.Max(1, (int)Math.Round(requested.Width * scale)),
+                Math.Max(1, (int)Math.Round(requested.Height * scale)));
+            if (!ContainsRect(resolved.Info.Bounds, physical))
+            {
+                return Error(
+                    id,
+                    InvalidRequestCode,
+                    "region must lie inside the selected window.",
+                    "INVALID_REQUEST");
+            }
+
+            captureRegion = physical;
+
+            // A crop is an image request; an a11y-only caller still gets the
+            // image it asked to crop.
+            image = true;
+            if (mode == SnapshotMode.A11y)
+            {
+                mode = SnapshotMode.Vision;
+            }
+        }
+
         var options = new SnapshotOptions
         {
             Mode = mode,
@@ -453,6 +540,7 @@ public sealed class JsonRpcDispatcher
             Image = image,
             ImageLongEdge = _defaultImageLongEdge,
             MaxImageLongEdge = _maxImageLongEdge,
+            CaptureRegion = captureRegion,
         };
 
         // The registry's freshly resolved bounds are authoritative for both the
@@ -500,6 +588,48 @@ public sealed class JsonRpcDispatcher
                 return false;
         }
     }
+
+    private static bool TryParseSnapshotRegion(JsonElement element, out SnapshotRegion region)
+    {
+        region = default;
+
+        if (element.ValueKind != JsonValueKind.Object
+            || !TryReadIntProperty(element, "x", out var x)
+            || !TryReadIntProperty(element, "y", out var y)
+            || !TryReadIntProperty(element, "width", out var width)
+            || !TryReadIntProperty(element, "height", out var height)
+            || x < 0
+            || y < 0
+            || width <= 0
+            || height <= 0)
+        {
+            return false;
+        }
+
+        region = new SnapshotRegion(x, y, width, height);
+        return true;
+    }
+
+    private static bool TryReadIntProperty(JsonElement element, string name, out int value)
+    {
+        value = 0;
+
+        return element.TryGetProperty(name, out var property)
+            && property.ValueKind == JsonValueKind.Number
+            && property.TryGetInt32(out value);
+    }
+
+    private static bool SameBounds(Rect left, Rect right)
+        => left.X == right.X
+            && left.Y == right.Y
+            && left.Width == right.Width
+            && left.Height == right.Height;
+
+    private static bool ContainsRect(Rect outer, Rect inner)
+        => inner.X >= outer.X
+            && inner.Y >= outer.Y
+            && inner.X + inner.Width <= outer.X + outer.Width
+            && inner.Y + inner.Height <= outer.Y + outer.Height;
 
     private static bool TryReadOptionalInt(
         JsonElement parameters,

@@ -44,6 +44,48 @@ public sealed class ScreenCaptureTests
     }
 
     [Fact]
+    public void ACropReturnsNativePixelsAndTheCropRect()
+    {
+        using var bitmap = new Bitmap(100, 80, PixelFormat.Format32bppRgb);
+        using (var graphics = Graphics.FromImage(bitmap))
+        {
+            graphics.Clear(Color.FromArgb(255, 10, 20, 30));
+        }
+
+        var payload = ScreenCapture.EncodeRegion(
+            bitmap,
+            new Rect(0, 0, 100, 80),
+            new Rect(10, 20, 30, 40));
+
+        Assert.NotNull(payload);
+        Assert.Equal(1.0, payload!.Scale, 3);
+        Assert.Equal(10, payload.SourceBounds.X);
+        Assert.Equal(20, payload.SourceBounds.Y);
+        Assert.Equal(30, payload.SourceBounds.Width);
+        Assert.Equal(40, payload.SourceBounds.Height);
+
+        using var image = new Bitmap(new MemoryStream(Convert.FromBase64String(payload.Data)));
+        Assert.Equal(30, image.Width);
+        Assert.Equal(40, image.Height);
+
+        var pixel = image.GetPixel(15, 20);
+        Assert.Equal(10, pixel.R);
+        Assert.Equal(20, pixel.G);
+        Assert.Equal(30, pixel.B);
+    }
+
+    [Fact]
+    public void ACropOutsideTheBitmapReturnsNull()
+    {
+        using var bitmap = new Bitmap(100, 80);
+
+        Assert.Null(ScreenCapture.EncodeRegion(
+            bitmap, new Rect(0, 0, 100, 80), new Rect(90, 70, 20, 20)));
+        Assert.Null(ScreenCapture.EncodeRegion(
+            bitmap, new Rect(0, 0, 100, 80), new Rect(-1, 0, 10, 10)));
+    }
+
+    [Fact]
     public void EncodePreservesContentFromAZeroAlphaCapture()
     {
         // GDI can hand back screen content with a zero alpha channel even

@@ -42,6 +42,21 @@ describe("snapshotTool", () => {
     expect(output.text).toContain("app: notepad (pid 4242)");
   });
 
+  it("forwards a region crop", async () => {
+    const request = vi.fn().mockResolvedValue(notepadSnapshot);
+
+    await snapshotTool(requester(request), {
+      windowId: "w_1",
+      region: { x: 1, y: 2, width: 30, height: 40 },
+    });
+
+    expect(request).toHaveBeenCalledWith(
+      "snapshot",
+      { windowId: "w_1", region: { x: 1, y: 2, width: 30, height: 40 } },
+      HOST_REQUEST_TIMEOUT_MS,
+    );
+  });
+
   it("omits unspecified optional arguments", async () => {
     const request = vi.fn().mockResolvedValue(notepadSnapshot);
 
@@ -184,6 +199,17 @@ describe("computer_snapshot MCP tool", () => {
           maxDepth: { type: "integer", minimum: 1 },
           maxNodes: { type: "integer", minimum: 1 },
           image: { type: "boolean" },
+          region: {
+            type: "object",
+            properties: {
+              x: { type: "integer", minimum: 0 },
+              y: { type: "integer", minimum: 0 },
+              width: { type: "integer", minimum: 1 },
+              height: { type: "integer", minimum: 1 },
+            },
+            required: ["x", "y", "width", "height"],
+            additionalProperties: false,
+          },
         },
         required: ["windowId"],
         additionalProperties: false,
