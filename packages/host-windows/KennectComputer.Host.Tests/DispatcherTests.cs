@@ -1251,6 +1251,67 @@ public sealed class DispatcherTests
     }
 
     [Fact]
+    public async Task StopDuringALongKeysSequenceSendsNoFurtherUnicodeEvents()
+    {
+        var raw = NotepadRawWindow();
+        var harness = NewSelectionHarness(new FakeUiaWalker(), new FakeWindowCapture(), raw);
+        var info = harness.Registry.Register(raw);
+        harness.Selection.Select(info);
+
+        // The stop lands mid-sequence; the next character must not be sent.
+        var written = 0;
+        harness.Input.BeforeUnicodeText = () =>
+        {
+            if (++written == 2)
+            {
+                harness.Control.Stop();
+            }
+        };
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request("action", """{"kind":"type","text":"abcdef","method":"keys"}"""));
+
+        Assert.Equal("ACTION_TIMEOUT", ErrorCodeOf(response));
+        Assert.Equal(
+            "The operation was stopped.",
+            response.GetProperty("error").GetProperty("message").GetString());
+        Assert.Equal(["a", "b"], harness.Input.Text);
+    }
+
+    [Fact]
+    public async Task StopDuringAMultiClickSendsNoFurtherClickEvents()
+    {
+        var raw = NotepadRawWindow();
+        var harness = NewSelectionHarness(new FakeUiaWalker(), new FakeWindowCapture(), raw);
+        var info = harness.Registry.Register(raw);
+        harness.Selection.Select(info);
+
+        // The stop lands after the second click; the third must not be sent.
+        var clicks = 0;
+        harness.Input.BeforeClick = () =>
+        {
+            if (++clicks == 2)
+            {
+                harness.Control.Stop();
+            }
+        };
+
+        var response = await harness.Dispatcher.HandleAsync(
+            Request(
+                "action",
+                """{"kind":"click","x":5,"y":5,"space":"screen","count":3}"""));
+
+        Assert.Equal("ACTION_TIMEOUT", ErrorCodeOf(response));
+        Assert.Equal(
+            "The operation was stopped.",
+            response.GetProperty("error").GetProperty("message").GetString());
+        Assert.Equal(
+            [(MouseButton.Left, 1), (MouseButton.Left, 1)],
+            harness.Input.Clicks);
+        Assert.Equal([(5, 5)], harness.Input.Moves);
+    }
+
+    [Fact]
     public async Task StopReturnsOkAndCancelsTheCurrentOperation()
     {
         var tokens = TokenStore.CreateForTests(NewTempDir());
