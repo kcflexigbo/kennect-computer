@@ -26,6 +26,13 @@ public sealed class M2InputTests
     private const string KeysText = "kennect 123";
     private const string BatchText = "batch text";
 
+    /// <summary>
+    /// Distinct text left on the clipboard before a paste. If the target reads
+    /// the clipboard after the host restored it, the control receives this
+    /// sentinel instead of the typed text and the test fails.
+    /// </summary>
+    private const string ClipboardSentinel = "SENTINEL user clipboard 请勿粘贴";
+
     [Fact]
     public async Task ClicksTheButtonByNodeAndTheLabelChanges()
     {
@@ -87,15 +94,18 @@ public sealed class M2InputTests
         var harness = new Harness(window);
         var editor = Find(harness.Snapshot(image: false), "edit", "Editor");
 
-        // TypeAction restores the user's clipboard in a finally, and the target
-        // app may consume Ctrl+V after that restore (measured: roughly one run
-        // in eight pasted the restored text instead). Seeding the expected text
-        // makes the integration deterministic; the unit tests already pin the
-        // save/set/chord/restore order. The user's own text is put back below.
+        // A distinct sentinel makes the restore race observable: the host must
+        // keep the typed text on the clipboard until the editor consumes the
+        // paste, so the editor can only ever receive PasteText. The user's own
+        // clipboard text is put back below.
         var saved = harness.Clipboard.GetText();
         try
         {
-            harness.Clipboard.SetText(PasteText);
+            harness.Clipboard.SetText(ClipboardSentinel);
+
+            // The editor is slow to consume Ctrl+V: an immediate clipboard
+            // restore would make it paste the sentinel.
+            window.DelayNextPaste(TimeSpan.FromMilliseconds(150));
 
             var result = await InputAsync(
                 window,
@@ -106,7 +116,16 @@ public sealed class M2InputTests
 
             Assert.Equal("type", result.Action);
             Assert.Equal("paste", result.Method);
-            Assert.Equal(PasteText, await ReadTextUntilAsync(harness, editor.NodeId, PasteText));
+
+            // ReadTextAction re-resolves the live node; the action's own wait
+            // already observed the pasted text, so a single read is enough.
+            var read = await harness.ReadText.ExecuteAsync(
+                new ReadTextRequest { NodeId = editor.NodeId },
+                CancellationToken.None);
+            Assert.Equal(PasteText, read.Text);
+
+            // The saved clipboard was restored after the target consumed it.
+            Assert.Equal(ClipboardSentinel, harness.Clipboard.GetText());
         }
         finally
         {
@@ -224,12 +243,18 @@ public sealed class M2InputTests
         var button = Find(snapshot, "button", "Action");
         var editor = Find(snapshot, "edit", "Editor");
 
-        // Same paste-restore stabilization and clipboard restore as the
-        // standalone paste test.
+        // The sentinel proves the paste waited for target consumption: the
+        // read_text step immediately after type must already see the text,
+        // before the host restores the sentinel. The user's clipboard text is
+        // put back below.
         var saved = harness.Clipboard.GetText();
         try
         {
-            harness.Clipboard.SetText(BatchText);
+            harness.Clipboard.SetText(ClipboardSentinel);
+
+            // The type step's paste is slow to be consumed, exactly as in the
+            // standalone paste test.
+            window.DelayNextPaste(TimeSpan.FromMilliseconds(150));
 
             var result = await InputAsync(
                 window,
@@ -270,9 +295,10 @@ public sealed class M2InputTests
             var read = Assert.IsType<ReadTextResult>(result.Steps[2].Data);
             Assert.Equal(editor.NodeId, read.NodeId);
 
-            // The read step may run before the app has processed Ctrl+V; the
-            // text must still land in the editor once input is processed.
-            Assert.Equal(BatchText, await ReadTextUntilAsync(harness, editor.NodeId, BatchText));
+            // The type step only completes after the editor shows the text, so
+            // the immediately following read is exact, not eventually exact.
+            Assert.Equal(BatchText, read.Text);
+            Assert.Equal(ClipboardSentinel, harness.Clipboard.GetText());
             Assert.Equal("clicked", WaitForResult(window, "clicked"));
         }
         finally

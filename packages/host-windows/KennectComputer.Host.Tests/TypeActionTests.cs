@@ -8,14 +8,17 @@ using KennectComputer.Host.Windows;
 namespace KennectComputer.Host.Tests;
 
 /// <summary>
-/// Pins the type flow (DESIGN §6.4): paste saves and restores the clipboard
-/// around the Ctrl+V chord, value sets the accessibility value or falls back to
-/// paste, keys sends Unicode per code unit without touching the clipboard, and
-/// a node target focuses the live element first. The selected window is always
-/// verified foreground before any text is typed, expectations run first, and
-/// stale nodes, focus refusals, and invalid requests send no input. Fakes stand
-/// in for the resolver, foreground API, input sender, clipboard, and walker, so
-/// no desktop, window, real input, or real clipboard is touched.
+/// Pins the type flow (DESIGN §6.4): paste saves the clipboard, sends Ctrl+V,
+/// waits (bounded) for the target to consume the paste, then restores the
+/// clipboard, so a slow target can never paste the user's previous clipboard.
+/// Value sets the accessibility value or falls back to paste, keys sends
+/// Unicode per code unit without touching the clipboard, and a node target
+/// focuses the live element first. The selected window is always verified
+/// foreground before any text is typed, expectations run first, and stale
+/// nodes, focus refusals, and invalid requests send no input. Fakes stand in
+/// for the resolver, foreground API, input sender, clipboard, and walker, and a
+/// fake clock drives the consumption deadline, so no desktop, window, real
+/// input, real clipboard, or real sleep is touched.
 /// </summary>
 public sealed class TypeActionTests
 {
@@ -24,7 +27,7 @@ public sealed class TypeActionTests
     private static readonly Rect InitialBounds = new(100, 50, 3000, 2000);
 
     [Fact]
-    public async Task PasteSavesSetsSendsTheChordAndRestoresTheClipboard()
+    public async Task PasteSavesSetsSendsTheChordThenDrainsAndRestoresTheClipboard()
     {
         var harness = Harness.Create(new FakeUiaNodeResolver(null));
         harness.Clipboard.Text = "old text";
@@ -43,7 +46,132 @@ public sealed class TypeActionTests
         Assert.Equal(
             ["KeyDown:17", "KeyDown:86", "KeyUp:86", "KeyUp:17"],
             harness.Input.Calls);
+
+        // Without a readable target the action drains the target window's
+        // input queue after the full chord and only then restores the
+        // clipboard. The drain observed all four key events.
+        var drain = Assert.Single(harness.Drains);
+        Assert.Equal(harness.Raw.Hwnd, drain.Hwnd);
+        Assert.Equal(4, drain.InputCalls);
+        Assert.Equal(TypeAction.DefaultPasteConsumptionTimeout, drain.Timeout);
         Assert.Equal(1, harness.Foreground.SetForegroundCalls);
+    }
+
+    [Fact]
+    public async Task PasteWaitsForTheTargetTextBeforeRestoringTheClipboard()
+    {
+        var target = Edit();
+        var live = FakeUiaNode.From(target);
+        live.Value = string.Empty;
+        var harness = Harness.Create(new FakeUiaNodeResolver(live));
+        harness.SaveNode("n1:1", target);
+        harness.Clipboard.Text = "old text";
+
+        // The target processes the queued Ctrl+V after two polls, like a busy
+        // app. The action must observe the text before restoring.
+        var polls = 0;
+        harness.Clock.OnDelay = () =>
+        {
+            polls++;
+            if (polls == 2)
+            {
+                live.Value = "hello";
+            }
+        };
+
+        string? contentAtRestore = null;
+        harness.Clipboard.OnSet = text =>
+        {
+            if (text == "old text")
+            {
+                contentAtRestore = live.Value;
+            }
+        };
+
+        var result = await harness.Action.ExecuteAsync(
+            new TypeRequest { Text = "hello", NodeId = "n1:1" },
+            CancellationToken.None);
+
+        Assert.Equal("paste", result.Method);
+        Assert.Equal(["hello", "old text"], harness.Clipboard.Sets);
+        Assert.Equal("hello", contentAtRestore);
+        Assert.Equal(2, harness.Clock.Delays);
+        Assert.Empty(harness.Drains);
+    }
+
+    [Fact]
+    public async Task PasteRestoresTheClipboardWhenTheTargetNeverShowsThePaste()
+    {
+        var target = Edit();
+        var live = FakeUiaNode.From(target);
+        live.Value = string.Empty;
+        var harness = Harness.Create(new FakeUiaNodeResolver(live));
+        harness.SaveNode("n1:1", target);
+        harness.Clipboard.Text = "old text";
+
+        string? contentAtRestore = null;
+        harness.Clipboard.OnSet = text =>
+        {
+            if (text == "old text")
+            {
+                contentAtRestore = live.Value;
+            }
+        };
+
+        var result = await harness.Action.ExecuteAsync(
+            new TypeRequest { Text = "hello", NodeId = "n1:1" },
+            CancellationToken.None);
+
+        Assert.Equal("paste", result.Method);
+        Assert.Equal(["hello", "old text"], harness.Clipboard.Sets);
+        Assert.Equal(string.Empty, contentAtRestore);
+        Assert.True(harness.Clock.Delays > 0, "The bounded wait did not poll.");
+        Assert.Empty(harness.Drains);
+    }
+
+    [Fact]
+    public async Task CancellationDuringTheConsumptionWaitStillRestoresTheClipboard()
+    {
+        var target = Edit();
+        var live = FakeUiaNode.From(target);
+        live.Value = string.Empty;
+        var harness = Harness.Create(new FakeUiaNodeResolver(live));
+        harness.SaveNode("n1:1", target);
+        harness.Clipboard.Text = "old text";
+
+        using var cancellation = new CancellationTokenSource();
+        harness.Clock.OnDelay = cancellation.Cancel;
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            harness.Action.ExecuteAsync(
+                new TypeRequest { Text = "hello", NodeId = "n1:1" },
+                cancellation.Token));
+
+        Assert.Equal(["hello", "old text"], harness.Clipboard.Sets);
+        Assert.Equal("old text", harness.Clipboard.Text);
+    }
+
+    [Fact]
+    public async Task AnUnreadableNodeTargetFallsBackToDrainingTheInputQueue()
+    {
+        var target = Edit();
+        var live = FakeUiaNode.From(target) with
+        {
+            SupportsGetText = false,
+            SupportsGetValue = false,
+        };
+        var harness = Harness.Create(new FakeUiaNodeResolver(live));
+        harness.SaveNode("n1:1", target);
+        harness.Clipboard.Text = "old text";
+
+        var result = await harness.Action.ExecuteAsync(
+            new TypeRequest { Text = "hello", NodeId = "n1:1" },
+            CancellationToken.None);
+
+        Assert.Equal("paste", result.Method);
+        Assert.Equal(["hello", "old text"], harness.Clipboard.Sets);
+        Assert.Single(harness.Drains);
+        Assert.Equal(0, harness.Clock.Delays);
     }
 
     [Fact]
@@ -187,7 +315,12 @@ public sealed class TypeActionTests
             CancellationToken.None);
 
         Assert.Equal("paste", result.Method);
-        Assert.Equal(["TryFocus", "TrySetValue:hello"], live.Calls);
+
+        // The fallback paste reads the pre-chord content once to establish a
+        // baseline for paste-consumption detection.
+        Assert.Equal(
+            ["TryFocus", "TrySetValue:hello", "TryGetValue", "TryGetText"],
+            live.Calls);
         Assert.Equal(["hello", "old text"], harness.Clipboard.Sets);
         Assert.Equal(
             ["KeyDown:17", "KeyDown:86", "KeyUp:86", "KeyUp:17"],
@@ -510,6 +643,7 @@ public sealed class TypeActionTests
             Snapshots = new SnapshotStore();
             Input = new FakeInputSender();
             Clipboard = new FakeClipboard();
+            Clock = new FakeTypeClock();
             Foreground = new FakeWin32
             {
                 InitialForeground = 99,
@@ -528,7 +662,13 @@ public sealed class TypeActionTests
                     TimeSpan.FromMilliseconds(10)),
                 Input,
                 Clipboard,
-                Snapshots);
+                Snapshots,
+                Clock,
+                drainInputQueue: (hwnd, timeout, cancellationToken) =>
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    Drains.Add(new DrainCall(hwnd, timeout, Input.Calls.Count));
+                });
         }
 
         public RawWindow Raw { get; }
@@ -546,6 +686,11 @@ public sealed class TypeActionTests
         public FakeInputSender Input { get; }
 
         public FakeClipboard Clipboard { get; }
+
+        public FakeTypeClock Clock { get; }
+
+        /// <summary>Every substituted input-queue drain, in order.</summary>
+        public List<DrainCall> Drains { get; } = [];
 
         public FakeWin32 Foreground { get; }
 
@@ -599,6 +744,9 @@ internal sealed class FakeClipboard : IClipboard
     /// <summary>1-based successful-or-not <see cref="SetText"/> attempt to fail; 0 disables.</summary>
     public int FailSetAttempt { get; set; }
 
+    /// <summary>Runs after each successful write, so tests can observe restore ordering.</summary>
+    public Action<string>? OnSet { get; set; }
+
     public string? GetText()
     {
         GetCalls++;
@@ -622,5 +770,32 @@ internal sealed class FakeClipboard : IClipboard
 
         Sets.Add(text);
         Text = text;
+        OnSet?.Invoke(text);
+    }
+}
+
+/// <summary>One substituted queue drain, with the key events already sent.</summary>
+internal sealed record DrainCall(nint Hwnd, TimeSpan Timeout, int InputCalls);
+
+/// <summary>
+/// A clock that never sleeps: each delay advances fake time and may run a hook,
+/// so paste-consumption waits run deterministically and instantly.
+/// </summary>
+internal sealed class FakeTypeClock : IWaitClock
+{
+    public DateTimeOffset UtcNow { get; private set; } =
+        new(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
+
+    public int Delays { get; private set; }
+
+    public Action? OnDelay { get; set; }
+
+    public Task Delay(TimeSpan delay, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Delays++;
+        UtcNow += delay;
+        OnDelay?.Invoke();
+        return Task.CompletedTask;
     }
 }

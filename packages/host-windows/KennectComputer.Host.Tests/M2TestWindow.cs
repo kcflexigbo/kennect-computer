@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -360,6 +361,17 @@ internal sealed class M2TestWindow : IDisposable
     }
 
     /// <summary>
+    /// Makes the editor slow to process the next paste: it blocks its UI thread
+    /// after the Ctrl+V key reaches it and before the edit control reads the
+    /// clipboard. A host that restores the clipboard immediately makes the
+    /// editor paste the restored sentinel; a host that waits for consumption
+    /// keeps the typed text available. This turns a timing race into a
+    /// deterministic assertion.
+    /// </summary>
+    public void DelayNextPaste(TimeSpan delay)
+        => _host.Invoke(() => _host.Form.Editor.NextPasteDelay = delay);
+
+    /// <summary>
     /// Focuses the list without touching its scroll position, so the wheel test
     /// observes list scrolling rather than hover-scroll settings.
     /// </summary>
@@ -412,7 +424,7 @@ internal sealed class M2TestForm : Form
             Location = new Point(180, 28),
         };
 
-        Editor = new TextBox
+        Editor = new SlowPasteTextBox
         {
             AccessibleName = "Editor",
             Text = string.Empty,
@@ -442,7 +454,37 @@ internal sealed class M2TestForm : Form
 
     public Label ResultLabel { get; }
 
-    public TextBox Editor { get; }
+    public SlowPasteTextBox Editor { get; }
 
     public ListBox Items { get; }
+}
+
+/// <summary>
+/// An editor whose next Ctrl+V processing can be delayed, modeling a slow
+/// target. The delay runs on the UI thread before the edit control reads the
+/// clipboard, which makes a clipboard-restore race observable instead of
+/// intermittent.
+/// </summary>
+internal sealed class SlowPasteTextBox : TextBox
+{
+    private const int WmKeyDown = 0x0100;
+    private const int VkPaste = 0x56;
+
+    /// <summary>One-shot delay applied when the next V key-down reaches the control.</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal TimeSpan NextPasteDelay { get; set; }
+
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == WmKeyDown
+            && m.WParam == (nint)VkPaste
+            && NextPasteDelay > TimeSpan.Zero)
+        {
+            var delay = NextPasteDelay;
+            NextPasteDelay = TimeSpan.Zero;
+            Thread.Sleep(delay);
+        }
+
+        base.WndProc(ref m);
+    }
 }

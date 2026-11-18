@@ -122,10 +122,18 @@ produced it: acting on an older ID returns `STALE_SNAPSHOT`, and the live
 element is also re-checked (role, name, identifier, and bounds) before input.
 
 `computer_type` methods: `paste` saves the clipboard, sets the text, sends
-`Ctrl+V`, and restores the saved clipboard; it is the default because it is
-fast and safe for CJK and long text. `value` sets the accessibility value where
-the control supports it. `keys` types one Unicode event per UTF-16 code unit
-and never touches the clipboard.
+`Ctrl+V`, and keeps the typed text on the clipboard until the target has
+consumed the paste, then restores the saved text. When the target node exposes
+a value or text, the host polls it for the pasted content (bounded at 2
+seconds); when the target's content cannot be read (for example a paste with
+no `nodeId`), it waits for the window's input queue to drain instead, also
+bounded. The clipboard is restored on every path, including failure and
+cancellation, and the typed text is never left behind. A target that defers
+the paste beyond the bound cannot be observed: the host still restores the
+clipboard after the bound, but cannot prove that target read the paste. Paste
+is the default because it is fast and reliable for CJK and long text. `value`
+sets the accessibility value where the control supports it. `keys` types one
+Unicode event per UTF-16 code unit and never touches the clipboard.
 
 `computer_read_text` prefers TextPattern and falls back to ValuePattern. Its
 `maxLength` defaults to 10,000 characters and is capped at 50,000; the result
