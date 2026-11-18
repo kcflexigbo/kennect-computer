@@ -145,11 +145,14 @@ public sealed record BatchResult
 /// wait) propagates as <see cref="OperationCanceledException"/> and is never
 /// turned into a step failure or a synthetic code.
 ///
-/// Optional before/after snapshots are accessibility-only (no image), of the
-/// selected window, saved to the snapshot store so later actions can use their
-/// node IDs. They are best-effort: a failure is recorded in
-/// <see cref="BatchResult.Warning"/> and the steps still run. Cancellation
-/// during a snapshot propagates unchanged.
+/// Optional before/after snapshots are accessibility-only (no image) captures
+/// of the selected window. The before snapshot is returned only: saving it
+/// would allocate a new generation and replace the state the batch's own steps
+/// act on, invalidating node IDs and image metadata taken before the batch.
+/// The after snapshot is saved, because node IDs from it are the caller's
+/// starting point for later actions. Both are best-effort: a failure is
+/// recorded in <see cref="BatchResult.Warning"/> and the steps still run.
+/// Cancellation during a snapshot propagates unchanged.
 /// </summary>
 public sealed class BatchAction
 {
@@ -219,7 +222,7 @@ public sealed class BatchAction
         }
 
         var (snapshotBefore, beforeWarning) = request.SnapshotBefore
-            ? CaptureSnapshot("before", cancellationToken)
+            ? CaptureSnapshot("before", save: false, cancellationToken)
             : (null, null);
 
         int? failedIndex = null;
@@ -271,7 +274,7 @@ public sealed class BatchAction
         // captures the after state when requested.
         var (snapshotAfter, afterWarning) =
             request.SnapshotAfter && !cancellationToken.IsCancellationRequested
-                ? CaptureSnapshot("after", cancellationToken)
+                ? CaptureSnapshot("after", save: true, cancellationToken)
                 : (null, null);
 
         return new BatchResult
@@ -333,13 +336,15 @@ public sealed class BatchAction
     }
 
     /// <summary>
-    /// Captures an accessibility-only snapshot of the selected window and
-    /// saves it so later actions can use its node IDs. A best-effort failure is
-    /// returned as a warning instead of stopping the batch; cancellation is
-    /// never swallowed.
+    /// Captures an accessibility-only snapshot of the selected window. Only an
+    /// after snapshot is saved for later actions; a before snapshot is returned
+    /// without touching the store, so it cannot invalidate the state the batch
+    /// itself is about to act on. A best-effort failure is returned as a
+    /// warning instead of stopping the batch; cancellation is never swallowed.
     /// </summary>
     private (Snapshot? Snapshot, string? Warning) CaptureSnapshot(
         string phase,
+        bool save,
         CancellationToken cancellationToken)
     {
         try
@@ -356,16 +361,20 @@ public sealed class BatchAction
                 A11yOptions,
                 cancellationToken);
 
-            // The returned snapshot is self-describing, and the store keeps
-            // the same bounds the capture used so later coordinate mapping
-            // sees one consistent state.
+            // The returned snapshot is self-describing, and a saved snapshot
+            // keeps the same bounds the capture used so later coordinate
+            // mapping sees one consistent state.
             cancellationToken.ThrowIfCancellationRequested();
             capture.Snapshot.Window = resolved.Info;
-            _snapshots.Save(
-                resolved.Info.WindowId,
-                capture.Snapshot,
-                capture.NodeMap,
-                resolved.Info.Bounds);
+
+            if (save)
+            {
+                _snapshots.Save(
+                    resolved.Info.WindowId,
+                    capture.Snapshot,
+                    capture.NodeMap,
+                    resolved.Info.Bounds);
+            }
 
             return (capture.Snapshot, null);
         }

@@ -183,6 +183,49 @@ public sealed class BatchActionTests
     }
 
     [Fact]
+    public async Task SnapshotBeforeIsReturnedWithoutReplacingTheStoredSnapshot()
+    {
+        // The batch's steps act on the state an earlier snapshot produced: a
+        // node ID and an image-space coordinate. A before snapshot is a
+        // report, not a new target state, so it must not invalidate either.
+        var target = new TreeModel
+        {
+            Role = "button",
+            Name = "Send",
+            Bounds = new Rect(110, 70, 120, 32),
+            Actions = ["press"],
+        };
+        var live = FakeUiaNode.From(target);
+        var harness = Harness.Create(liveNode: live);
+        harness.SaveSnapshotWithImage("n1:1", target);
+
+        var result = await harness.Action.ExecuteAsync(
+            new BatchRequest
+            {
+                Steps =
+                [
+                    new ClickStep { Request = new ClickRequest { NodeId = "n1:1" } },
+                    new ClickStep { Request = new ClickRequest { X = 10, Y = 20 } },
+                ],
+                SnapshotBefore = true,
+            },
+            CancellationToken.None);
+
+        Assert.Null(result.FailedIndex);
+        Assert.Equal(2, result.Steps.Count);
+        Assert.All(result.Steps, step => Assert.True(step.Ok));
+        Assert.NotNull(result.SnapshotBefore);
+
+        // Both steps ran, so the before snapshot cannot have replaced the
+        // generation or dropped the image the steps depended on.
+        Assert.True(harness.Snapshots.TryGetState(harness.SelectedWindow.WindowId, out var state));
+        Assert.NotNull(state);
+        Assert.Equal(1, state.Generation);
+        Assert.NotNull(state.Image);
+        Assert.True(harness.Snapshots.TryGetNode(harness.SelectedWindow.WindowId, "n1:1", out _));
+    }
+
+    [Fact]
     public async Task AStopTokenBetweenStepsStopsTheBatchAndReportsCompletedSteps()
     {
         var harness = Harness.Create();
@@ -478,6 +521,32 @@ public sealed class BatchActionTests
                 SelectedWindow.WindowId,
                 new Snapshot { Generation = generation },
                 nodes,
+                SelectedWindow.Bounds);
+        }
+
+        /// <summary>
+        /// Stores an actionable generation that also has image metadata, so a
+        /// batch step can use image-space coordinates.
+        /// </summary>
+        public void SaveSnapshotWithImage(string nodeId, TreeModel node, int generation = 1)
+        {
+            Snapshots.Save(
+                SelectedWindow.WindowId,
+                new Snapshot
+                {
+                    Generation = generation,
+                    Image = new ImagePayload
+                    {
+                        Data = "x",
+                        MimeType = "image/png",
+                        Scale = 1.5,
+                        SourceBounds = SelectedWindow.Bounds,
+                    },
+                },
+                new Dictionary<string, TreeModel>(StringComparer.Ordinal)
+                {
+                    [nodeId] = node,
+                },
                 SelectedWindow.Bounds);
         }
     }
