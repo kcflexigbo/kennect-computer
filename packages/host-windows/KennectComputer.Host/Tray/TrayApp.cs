@@ -252,7 +252,7 @@ public sealed class TrayApp : IDisposable
             ShowInTaskbar = false;
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.Manual;
-            Location = new Point(-32000, -32000);
+            Location = new System.Drawing.Point(-32000, -32000);
             Size = new Size(1, 1);
         }
 
