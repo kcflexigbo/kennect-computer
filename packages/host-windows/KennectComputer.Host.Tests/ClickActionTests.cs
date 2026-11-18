@@ -489,6 +489,15 @@ internal sealed class FakeInputSender : IInputSender
 
     public List<string> Text { get; } = [];
 
+    /// <summary>Runs before a key-down is recorded; tests inject failures here.</summary>
+    public Action? BeforeKeyDown { get; set; }
+
+    /// <summary>Runs before a key-up is recorded; tests inject failures here.</summary>
+    public Action? BeforeKeyUp { get; set; }
+
+    /// <summary>Runs before typed text is recorded; tests inject failures or observe order.</summary>
+    public Action? BeforeUnicodeText { get; set; }
+
     public void MoveTo(int x, int y)
     {
         Calls.Add($"MoveTo:{x},{y}");
@@ -509,18 +518,21 @@ internal sealed class FakeInputSender : IInputSender
 
     public void KeyDown(ushort virtualKey)
     {
+        BeforeKeyDown?.Invoke();
         Calls.Add($"KeyDown:{virtualKey}");
         Keys.Add((virtualKey, true));
     }
 
     public void KeyUp(ushort virtualKey)
     {
+        BeforeKeyUp?.Invoke();
         Calls.Add($"KeyUp:{virtualKey}");
         Keys.Add((virtualKey, false));
     }
 
     public void UnicodeText(string text)
     {
+        BeforeUnicodeText?.Invoke();
         Calls.Add($"UnicodeText:{text}");
         Text.Add(text);
     }
