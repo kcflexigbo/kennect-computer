@@ -62,18 +62,18 @@ public sealed class WindowsUiaNodeResolver : IUiaNodeResolver
         {
             // Snapshot node maps hold descendants, but a find or a future
             // caller may target the window element itself.
-            if (Matches(fingerprint, window))
+            if (Match(fingerprint, window) is { } rootNode)
             {
-                return new WindowsUiaNode(window);
+                return rootNode;
             }
 
             foreach (var candidate in FindCandidates(window, target))
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (Matches(fingerprint, candidate))
+                if (Match(fingerprint, candidate) is { } node)
                 {
-                    return new WindowsUiaNode(candidate);
+                    return node;
                 }
             }
         }
@@ -139,66 +139,65 @@ public sealed class WindowsUiaNodeResolver : IUiaNodeResolver
             && Enum.TryParse(role, ignoreCase: true, out controlType);
     }
 
-    private static bool Matches(NodeFingerprint fingerprint, AutomationElement element)
-        => fingerprint.Matches(IdentityOf(element));
-
-    private static TreeModel IdentityOf(AutomationElement element)
+    /// <summary>
+    /// Reads the candidate's identity once, verifies it against the snapshot
+    /// fingerprint, and builds the node from the same verified identity. The
+    /// identity read lives in one place, and the node never re-reads what the
+    /// fingerprint just checked.
+    /// </summary>
+    private static WindowsUiaNode? Match(
+        NodeFingerprint fingerprint,
+        AutomationElement element)
     {
-        var controlType = WindowsUiaWalker.Read(
-            () => element.Properties.ControlType.ValueOrDefault,
-            ControlType.Unknown);
-        var name = WindowsUiaWalker.Read(
-            () => element.Properties.Name.ValueOrDefault,
-            string.Empty);
-        var identifier = WindowsUiaWalker.Read(
-            () => element.Properties.AutomationId.ValueOrDefault,
-            string.Empty);
-        var bounds = WindowsUiaWalker.Read(
-            () => element.Properties.BoundingRectangle.ValueOrDefault,
-            Rectangle.Empty);
+        var identity = WindowsUiaNode.ReadIdentity(element);
 
-        return new TreeModel
-        {
-            Role = WindowsUiaWalker.MapRole(controlType),
-            Name = name ?? string.Empty,
-            Identifier = string.IsNullOrEmpty(identifier) ? null : identifier,
-            Bounds = WindowsUiaWalker.ToRect(bounds),
-        };
+        return fingerprint.Matches(identity.ToTreeModel())
+            ? new WindowsUiaNode(element, identity)
+            : null;
     }
 }
 
 /// <summary>
-/// The FlaUI-backed <see cref="IUiaNode"/>. Identity, state, and supported
-/// actions are captured when the resolver accepts the element; pattern
-/// operations are fetched from the live element on demand so a vanished
-/// element reports <c>false</c> rather than acting on a replacement control.
+/// The identity components read once from a live element. The resolver verifies
+/// this against the snapshot fingerprint and passes the same value to the
+/// resolved node, so role/name/identifier/bounds normalization cannot drift
+/// between the check and the node exposed to callers.
+/// </summary>
+internal readonly record struct UiaElementIdentity(
+    string Role,
+    string Name,
+    string? Identifier,
+    Rect Bounds)
+{
+    public TreeModel ToTreeModel() => new()
+    {
+        Role = Role,
+        Name = Name,
+        Identifier = Identifier,
+        Bounds = Bounds,
+    };
+}
+
+/// <summary>
+/// The FlaUI-backed <see cref="IUiaNode"/>. The identity the resolver verified
+/// is captured by reference, state and supported actions are read once at
+/// construction, and pattern operations are fetched from the live element on
+/// demand so a vanished element reports <c>false</c> rather than acting on a
+/// replacement control.
 /// </summary>
 internal sealed class WindowsUiaNode : IUiaNode
 {
     private readonly AutomationElement _element;
 
-    internal WindowsUiaNode(AutomationElement element)
+    internal WindowsUiaNode(AutomationElement element, UiaElementIdentity identity)
     {
         ArgumentNullException.ThrowIfNull(element);
         _element = element;
 
-        var controlType = WindowsUiaWalker.Read(
-            () => element.Properties.ControlType.ValueOrDefault,
-            ControlType.Unknown);
-        var name = WindowsUiaWalker.Read(
-            () => element.Properties.Name.ValueOrDefault,
-            string.Empty);
-        var identifier = WindowsUiaWalker.Read(
-            () => element.Properties.AutomationId.ValueOrDefault,
-            string.Empty);
-        var bounds = WindowsUiaWalker.Read(
-            () => element.Properties.BoundingRectangle.ValueOrDefault,
-            Rectangle.Empty);
-
-        Role = WindowsUiaWalker.MapRole(controlType);
-        Name = name ?? string.Empty;
-        Identifier = string.IsNullOrEmpty(identifier) ? null : identifier;
-        Bounds = WindowsUiaWalker.ToRect(bounds);
+        Role = identity.Role;
+        Name = identity.Name;
+        Identifier = identity.Identifier;
+        Bounds = identity.Bounds;
         Enabled = WindowsUiaWalker.Read(
             () => element.Properties.IsEnabled.ValueOrDefault,
             true);
@@ -206,6 +205,35 @@ internal sealed class WindowsUiaNode : IUiaNode
             () => element.Properties.HasKeyboardFocus.ValueOrDefault,
             false);
         Actions = WindowsUiaWalker.ReadActions(element);
+    }
+
+    /// <summary>
+    /// Reads and normalizes the element's identity. This is the single source
+    /// of truth for fingerprint identity: the resolver matches against it and
+    /// the node exposes the same value.
+    /// </summary>
+    internal static UiaElementIdentity ReadIdentity(AutomationElement element)
+    {
+        ArgumentNullException.ThrowIfNull(element);
+
+        var controlType = WindowsUiaWalker.Read(
+            () => element.Properties.ControlType.ValueOrDefault,
+            ControlType.Unknown);
+        var name = WindowsUiaWalker.Read(
+            () => element.Properties.Name.ValueOrDefault,
+            string.Empty);
+        var identifier = WindowsUiaWalker.Read(
+            () => element.Properties.AutomationId.ValueOrDefault,
+            string.Empty);
+        var bounds = WindowsUiaWalker.Read(
+            () => element.Properties.BoundingRectangle.ValueOrDefault,
+            Rectangle.Empty);
+
+        return new UiaElementIdentity(
+            WindowsUiaWalker.MapRole(controlType),
+            name ?? string.Empty,
+            string.IsNullOrEmpty(identifier) ? null : identifier,
+            WindowsUiaWalker.ToRect(bounds));
     }
 
     public string Role { get; }

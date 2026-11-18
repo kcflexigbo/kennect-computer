@@ -16,9 +16,24 @@ public sealed class NodeResolverTests
 
         var resolved = resolver.Resolve((nint)42, target, CancellationToken.None);
 
+        Assert.NotNull(resolved);
         Assert.Same(live, resolved);
+        AssertIdentityMatches(target, resolved);
         Assert.Equal((nint)42, resolver.LastHwnd);
         Assert.Same(target, resolver.LastTarget);
+    }
+
+    [Fact]
+    public void ResolvedNodeExposesTheIdentityTheFingerprintVerified()
+    {
+        var target = SnapshotButton();
+        var live = FakeUiaNode.From(target);
+
+        var resolved = new FakeUiaNodeResolver(live)
+            .Resolve((nint)42, target, CancellationToken.None);
+
+        Assert.NotNull(resolved);
+        AssertIdentityMatches(target, resolved);
     }
 
     [Theory]
@@ -172,11 +187,13 @@ public sealed class NodeResolverTests
         Assert.NotNull(button);
         Assert.Equal("button", button.Role);
         Assert.Equal("Action 0", button.Name);
+        AssertIdentityMatches(buttonTarget, button);
         Assert.True(button.TryInvoke());
 
         var editor = resolver.Resolve(window.Handle, editorTarget, CancellationToken.None);
         Assert.NotNull(editor);
         Assert.Equal("edit", editor.Role);
+        AssertIdentityMatches(editorTarget, editor);
         Assert.True(editor.TryGetValue(out var value));
         Assert.Equal("Text", value);
         Assert.True(editor.TrySetValue("Changed"));
@@ -196,6 +213,30 @@ public sealed class NodeResolverTests
                     editorTarget.Bounds.Height),
             },
             CancellationToken.None));
+    }
+
+    /// <summary>
+    /// The node handed to callers must expose exactly the identity the
+    /// resolver's fingerprint check accepted.
+    /// </summary>
+    private static void AssertIdentityMatches(TreeModel target, IUiaNode node)
+    {
+        Assert.Equal(target.Role, node.Role);
+        Assert.Equal(target.Name, node.Name);
+        Assert.Equal(target.Identifier, node.Identifier);
+        Assert.Equal(target.Bounds.X, node.Bounds.X);
+        Assert.Equal(target.Bounds.Y, node.Bounds.Y);
+        Assert.Equal(target.Bounds.Width, node.Bounds.Width);
+        Assert.Equal(target.Bounds.Height, node.Bounds.Height);
+        Assert.Equal(
+            NodeFingerprint.From(target),
+            NodeFingerprint.From(new TreeModel
+            {
+                Role = node.Role,
+                Name = node.Name,
+                Identifier = node.Identifier,
+                Bounds = node.Bounds,
+            }));
     }
 
     private static TreeModel SnapshotButton() => new()
