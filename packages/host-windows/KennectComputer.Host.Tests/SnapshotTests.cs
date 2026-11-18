@@ -413,122 +413,76 @@ internal static class SampleImages
 /// A WinForms window created on an STA thread that the test owns and closes.
 /// It is shown without activation so a test run never steals the user's
 /// foreground. The controls set <c>AccessibleName</c> so the UIA names are
-/// deterministic.
+/// deterministic. The STA/show/close lifecycle itself lives in
+/// <see cref="OwnedWindowHost{TForm}"/>, shared with the M2 input harness.
 /// </summary>
 internal sealed class OwnedTestWindow : IDisposable
 {
-    private readonly Form _form;
-    private readonly Thread _thread;
+    private readonly OwnedWindowHost<SnapshotTestForm> _host;
 
-    private OwnedTestWindow(Form form, Thread thread, nint handle, Rect bounds)
+    private OwnedTestWindow(OwnedWindowHost<SnapshotTestForm> host)
     {
-        _form = form;
-        _thread = thread;
-        Handle = handle;
-        Bounds = bounds;
+        _host = host;
     }
 
-    public nint Handle { get; }
+    public nint Handle => _host.Handle;
 
     /// <summary>The window's outer bounds in screen pixels, as reported by WinForms.</summary>
-    public Rect Bounds { get; }
+    public Rect Bounds => _host.Bounds;
 
     public static OwnedTestWindow Start()
+        => new(OwnedWindowHost<SnapshotTestForm>.Start(
+            CreateForm,
+            "kennect-snapshot-test-window",
+            activate: false));
+
+    public void Dispose() => _host.Dispose();
+
+    private static SnapshotTestForm CreateForm()
     {
-        var ready = new ManualResetEventSlim(initialState: false);
-        Form? form = null;
-        nint handle = 0;
-        var bounds = new Rect();
-
-        var thread = new Thread(() =>
+        var form = new SnapshotTestForm
         {
-            form = new SnapshotTestForm
-            {
-                Text = "Kennect Snapshot Test",
-                StartPosition = FormStartPosition.Manual,
-                Location = new Point(20, 20),
-                Size = new Size(640, 480),
-                ShowInTaskbar = false,
-            };
-
-            var panel = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                FlowDirection = FlowDirection.TopDown,
-                WrapContents = false,
-                AutoScroll = true,
-            };
-
-            for (var index = 0; index < 12; index++)
-            {
-                panel.Controls.Add(new Button
-                {
-                    AccessibleName = $"Action {index}",
-                    Text = $"Action {index}",
-                    Width = 160,
-                    Height = 28,
-                });
-            }
-
-            panel.Controls.Add(new TextBox
-            {
-                AccessibleName = "Editor",
-                Text = "Text",
-                Width = 200,
-            });
-            panel.Controls.Add(new Label
-            {
-                AccessibleName = "Caption",
-                Text = "Caption",
-                AutoSize = true,
-            });
-            form.Controls.Add(panel);
-
-            form.Shown += (_, _) =>
-            {
-                handle = form.Handle;
-                bounds = new Rect(
-                    form.Bounds.X,
-                    form.Bounds.Y,
-                    form.Bounds.Width,
-                    form.Bounds.Height);
-                ready.Set();
-            };
-
-            Application.Run(form);
-        })
-        {
-            IsBackground = true,
-            Name = "kennect-snapshot-test-window",
+            Text = "Kennect Snapshot Test",
+            StartPosition = FormStartPosition.Manual,
+            Location = new Point(20, 20),
+            Size = new Size(640, 480),
+            ShowInTaskbar = false,
         };
 
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-
-        if (!ready.Wait(TimeSpan.FromSeconds(15)))
+        var panel = new FlowLayoutPanel
         {
-            throw new TimeoutException("The test-owned window did not appear.");
-        }
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.TopDown,
+            WrapContents = false,
+            AutoScroll = true,
+        };
 
-        return new OwnedTestWindow(form!, thread, handle, bounds);
-    }
-
-    public void Dispose()
-    {
-        try
+        for (var index = 0; index < 12; index++)
         {
-            if (_form.IsHandleCreated && !_form.IsDisposed)
+            panel.Controls.Add(new Button
             {
-                _form.Invoke(new Action(_form.Close));
-            }
-        }
-        catch (InvalidOperationException)
-        {
-            // ObjectDisposedException derives from this; either way the message
-            // loop already ended and there is nothing to close.
+                AccessibleName = $"Action {index}",
+                Text = $"Action {index}",
+                Width = 160,
+                Height = 28,
+            });
         }
 
-        _thread.Join(TimeSpan.FromSeconds(10));
+        panel.Controls.Add(new TextBox
+        {
+            AccessibleName = "Editor",
+            Text = "Text",
+            Width = 200,
+        });
+        panel.Controls.Add(new Label
+        {
+            AccessibleName = "Caption",
+            Text = "Caption",
+            AutoSize = true,
+        });
+        form.Controls.Add(panel);
+
+        return form;
     }
 
     private sealed class SnapshotTestForm : Form

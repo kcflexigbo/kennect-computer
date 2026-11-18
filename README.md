@@ -5,9 +5,9 @@ an MCP server and a per-user Windows host. The MCP server speaks JSON-RPC 2.0
 over a token-authenticated named pipe to a .NET 10 host that owns window
 enumeration, accessibility, focus, and screen capture.
 
-**Current milestone: M1 skeleton (Windows).** The six M1 tools work end to end;
-input actions, Feishu automation, and macOS arrive in later plans. See
-`DESIGN.md` for the full design.
+**Current milestone: M2 core actions (Windows).** The six M1 tools plus the M2
+input, perception, and batch tools work end to end; Feishu automation (M3) and
+macOS (M5) arrive in later plans. See `DESIGN.md` for the full design.
 
 ## Requirements
 
@@ -102,6 +102,80 @@ call: the host reads it only after the running operation returns, so it cannot
 abort work already in flight and instead cancels the next operation. The tray
 **Stop** item and the hotkey are the immediate preemption paths.
 
+## M2 tools
+
+| Tool | What it does |
+|---|---|
+| `computer_click` | Click a snapshot node (preferred) or `x`/`y` coordinates; `button` defaults to left and `count` to 1 |
+| `computer_type` | Type text; `method` is `paste` (default), `value`, or `keys`; optionally target a node |
+| `computer_key` | Press a key or chord such as `Enter`, `Tab`, `Ctrl+A`, or `Alt+F4` |
+| `computer_scroll` | Turn the wheel at a node or coordinate; `direction` and `amount` (1..100 notches) |
+| `computer_find` | Search the selected window's accessibility tree by text and/or role without an image |
+| `computer_wait` | Wait for a window, node, or text to appear or disappear, with a bounded poll and deadline |
+| `computer_read_text` | Read a control's text through TextPattern or ValuePattern, capped by `maxLength` |
+| `computer_batch` | Run an ordered list of up to 50 action steps serially in one call |
+
+Every input tool requires the selected window to be foreground; the host
+activates and verifies it, retries once, and otherwise returns `FOCUS_REFUSED`
+with no input sent. A node ID is valid only for the snapshot generation that
+produced it: acting on an older ID returns `STALE_SNAPSHOT`, and the live
+element is also re-checked (role, name, identifier, and bounds) before input.
+
+`computer_type` methods: `paste` saves the clipboard, sets the text, sends
+`Ctrl+V`, and restores the saved clipboard; it is the default because it is
+fast and safe for CJK and long text. `value` sets the accessibility value where
+the control supports it. `keys` types one Unicode event per UTF-16 code unit
+and never touches the clipboard.
+
+`computer_read_text` prefers TextPattern and falls back to ValuePattern. Its
+`maxLength` defaults to 10,000 characters and is capped at 50,000; the result
+reports `length` and `truncated`. `computer_find` returns at most 50 matches by
+default; no matches is a successful empty result, not an error.
+`computer_wait` defaults to a 10,000 ms timeout (1..60,000) and a 100 ms poll;
+reaching the deadline returns `ACTION_TIMEOUT`.
+
+### Coordinate spaces
+
+`computer_click` and `computer_scroll` accept exactly one target: a `nodeId`,
+or both `x` and `y`.
+
+- `space: "image"` (the default) means pixels of the last returned snapshot
+  image for the selected window. The image carries `scale` (physical pixels per
+  returned image pixel) and `sourceBounds`; the host maps the point back to
+  physical pixels before injecting input. Image-space actions require a
+  snapshot with `image: true`, and a window that moved or resized since that
+  snapshot returns `STALE_SNAPSHOT` instead of clicking the wrong place.
+- `space: "screen"` means absolute physical screen pixels. It needs no
+  snapshot, but the point must lie inside the window and the window is still
+  verified foreground.
+
+### Expectations (`expect`)
+
+`computer_click`, `computer_type`, `computer_key`, and `computer_scroll` (and
+the same step kinds inside `computer_batch`) accept an optional `expect` list.
+Predicates are checked against one fresh accessibility read immediately before
+any focus change or input:
+
+- `{"kind": "foreground"}` — the selected window is the foreground window.
+- `{"kind": "node", "role"?, "name"?, "identifier"?, "focused"?}` — a matching
+  node exists; omitted fields are wildcards.
+- `{"kind": "text", "role"?, "name"?, "identifier"?, "contains"}` — a matching
+  node's text/value contains the string (ordinal, case-insensitive).
+
+The first failing predicate returns `EXPECTATION_FAILED`, names the predicate
+(`foreground`, `node:<name>`, or `text:<contains>`), and sends no input.
+
+### Batches
+
+`computer_batch` runs ordered steps (`click`, `type`, `key`, `scroll`, `wait`,
+`readText`) serially in one host call and stops at the first failure. A failed
+batch reports that step's error code and message, the zero-based `failedIndex`,
+and the partial per-step results; later steps do not run. A stop between steps
+returns the completed steps and names the step that did not run. Optional
+`snapshotBefore` and `snapshotAfter` are accessibility-only (never an image),
+are best-effort, and report a problem through `warning` without stopping the
+steps. The step list is capped at 50.
+
 ## Manual M1 acceptance
 
 Automated tests never launch external apps, show tray icons, register real
@@ -140,6 +214,38 @@ Files are named by UTC day. If `KENNECT_COMPUTER_SESSION_DIR` is set, the MCP
 server writes audit files to `<that directory>\audit`; the Windows host still
 publishes its own session files under `%LOCALAPPDATA%\KennectComputer`.
 
+## Manual M2 acceptance
+
+The M2 integration tests use an owned in-process window and real input, but they
+cannot prove the pipe, the tool schemas, or a real app's semantics. Run this
+live check yourself against a window you open, never against a real chat:
+
+1. Run `scripts/install-dev.ps1`, restart Claude Code in this repository, then
+   run `scripts/run-dev.ps1`. Confirm the tray icon appears.
+2. Open a scratch app yourself (for example Notepad with a new document). Do not
+   ask the tools to launch it; M2 has no launch tool.
+3. Ask Claude Code to call `computer_windows`, then `computer_select` with
+   `{"process": "notepad"}`. Confirm the window and its outline are returned.
+4. Call `computer_snapshot` with `{"windowId": "<id>", "image": true}`. Note the
+   editor's `nodeId`, the image `scale`, and `sourceBounds`.
+5. Call `computer_click` with the editor `nodeId`, call `computer_type` with
+   `{"text": "Kennect 汉字 123", "nodeId": "<editor>"}`, then call
+   `computer_read_text` with the same node. The returned `text` must be exactly
+   `Kennect 汉字 123`.
+6. Call `computer_click` with `{"x": <image x>, "y": <image y>}` (omit `space`
+   for image space) to place the caret by pixel, then `computer_read_text`
+   again. Confirm the text is unchanged and no `STALE_SNAPSHOT` was returned.
+7. Start a `computer_type` of long text or a `computer_batch` with several
+   steps, and press `Ctrl+Alt+Shift+Esc` while it is running. The call must end
+   with `ACTION_TIMEOUT` and "The operation was stopped."; the host stays
+   running. A batch stopped between steps returns its completed steps and the
+   not-run `failedIndex`; with nothing running, `computer_stop` still returns
+   `{ "ok": true }`.
+8. Inspect the audit log. The `computer_type` line carries only `textLength`
+   (UTF-8 byte length) and `textSha256` (hex SHA-256), never the text; the
+   `computer_read_text` line carries no text either.
+9. Exit the host from the tray.
+
 ## Development loop
 
 ```powershell
@@ -155,6 +261,12 @@ Focused MCP tests:
 npm test --workspace packages/mcp-server -- test/audit.test.ts
 ```
 
+Focused host integration tests (real UIA, real input, owned window only):
+
+```powershell
+dotnet test packages/host-windows/KennectComputer.Host.Tests --filter M2Input
+```
+
 Live-desktop tests that attach to a real UIA window are opt-in and skipped by
 default:
 
@@ -163,8 +275,11 @@ $env:KENNECT_LIVE_DESKTOP_TESTS = "1"
 dotnet test packages/host-windows/KennectComputer.Host.Tests
 ```
 
-The default suites use owned in-process windows and fake hosts; they never
-launch Notepad or other external apps.
+The default suites use owned in-process windows and fake hosts. The M2 input
+integration focuses that owned window and sends it real input, so run it in an
+interactive desktop session; it fails with a clear environment message when
+foreground activation or input injection is refused. No test launches Notepad
+or any other external app.
 
 ## Audit log
 
@@ -181,6 +296,10 @@ Each line contains exactly:
 
 - `windowId`, `process`, and `nodeId` are present only when the tool target had
   them. Window titles and message text are never logged.
+- `computer_type` adds `textLength` (the UTF-8 byte length) and `textSha256`
+  (the lowercase hex SHA-256 digest) of the typed text. The text itself is
+  never logged, and no other tool logs text: `computer_read_text` records only
+  its target and outcome, and snapshot content never reaches the log.
 - `result` is `"ok"` or the shared error code (for example `HOST_UNAVAILABLE`,
   `WINDOW_GONE`, `ACTION_TIMEOUT`); error messages are never logged.
 - Files older than the retention window are deleted when the MCP server starts.
