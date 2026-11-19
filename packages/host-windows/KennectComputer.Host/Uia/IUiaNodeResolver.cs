@@ -1,13 +1,4 @@
-using KennectComputer.Host.Protocol;
-
 namespace KennectComputer.Host.Uia;
-
-/// <summary>
-/// A live element under a physical screen point whose center is a safe
-/// substitute for an estimated coordinate click. The bounds are the live
-/// element's, so the click lands on the element rather than near it.
-/// </summary>
-public sealed record SnapTarget(string Role, string Name, Rect Bounds);
 
 /// <summary>
 /// Resolves a stored snapshot node back to the live element it was observed
@@ -25,13 +16,4 @@ public interface IUiaNodeResolver
     /// identity changed.
     /// </returns>
     IUiaNode? Resolve(nint hwnd, TreeModel target, CancellationToken cancellationToken);
-
-    /// <summary>
-    /// Finds the live element under a physical screen point and returns its
-    /// bounds center as a click target. Null when the point is over a
-    /// container, outside the window, or the provider cannot answer; callers
-    /// then keep the original coordinate.
-    /// </summary>
-    SnapTarget? SnapToPoint(nint hwnd, int x, int y, CancellationToken cancellationToken)
-        => null;
 }

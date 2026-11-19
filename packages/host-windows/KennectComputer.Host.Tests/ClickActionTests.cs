@@ -261,23 +261,24 @@ public sealed class ClickActionTests
     }
 
     [Fact]
-    public async Task ACoordinateClickSnapsToTheLiveElementUnderThePoint()
+    public async Task ACoordinateClickSnapsToTheWalkedElementUnderThePoint()
     {
-        var resolver = new FakeUiaNodeResolver(null)
+        var model = new TreeModel
         {
-            SnapTarget = new SnapTarget("text", "Don't lie to me", new Rect(300, 200, 120, 26)),
+            Role = "text",
+            Name = "Don't lie to me",
+            Bounds = new Rect(300, 200, 120, 26),
         };
-        var harness = Harness.Create(resolver);
+        var harness = Harness.Create(new FakeUiaNodeResolver(null), WalkerWith(model));
 
         var result = await harness.Action.ExecuteAsync(
-            new ClickRequest { X = 290, Y = 210, Space = CoordinateSpace.Screen },
+            new ClickRequest { X = 305, Y = 205, Space = CoordinateSpace.Screen },
             CancellationToken.None);
 
         Assert.Equal("coordinates", result.Method);
         Assert.NotNull(result.SnappedTo);
         Assert.Equal("text", result.SnappedTo.Role);
         Assert.Equal("Don't lie to me", result.SnappedTo.Name);
-        Assert.Equal([(290, 210)], resolver.SnapCalls);
 
         // The element's center (360, 213), not the estimated point.
         Assert.Equal([(360, 213)], harness.Input.Moves);
@@ -286,33 +287,36 @@ public sealed class ClickActionTests
     [Fact]
     public async Task AnImageSpaceClickSnapsAfterMapping()
     {
-        var resolver = new FakeUiaNodeResolver(null)
+        var model = new TreeModel
         {
-            SnapTarget = new SnapTarget("text", "Naaaah", new Rect(120, 70, 100, 30)),
+            Role = "text",
+            Name = "Naaaah",
+            Bounds = new Rect(110, 70, 100, 30),
         };
-        var harness = Harness.Create(resolver);
+        var harness = Harness.Create(new FakeUiaNodeResolver(null), WalkerWith(model));
         harness.SaveSnapshot(generation: 1, image: true, scale: 1.5);
 
         var result = await harness.Action.ExecuteAsync(
             new ClickRequest { X = 10, Y = 20 },
             CancellationToken.None);
 
-        // The image point maps to (115, 80) before the snap is queried.
-        Assert.Equal([(115, 80)], resolver.SnapCalls);
         Assert.Equal("text", result.SnappedTo?.Role);
 
-        // The snapped element is 100x30 at (120, 70): its center is (170, 85).
-        Assert.Equal([(170, 85)], harness.Input.Moves);
+        // The image point maps to (115, 80), inside the element; its center
+        // is (160, 85).
+        Assert.Equal([(160, 85)], harness.Input.Moves);
     }
 
     [Fact]
-    public async Task ASnapTargetOutsideTheWindowIsIgnored()
+    public async Task APointOutsideEveryLeafKeepsTheEstimatedCoordinate()
     {
-        var resolver = new FakeUiaNodeResolver(null)
+        var model = new TreeModel
         {
-            SnapTarget = new SnapTarget("text", "Elsewhere", new Rect(0, 0, 100, 30)),
+            Role = "text",
+            Name = "Elsewhere",
+            Bounds = new Rect(0, 0, 100, 30),
         };
-        var harness = Harness.Create(resolver);
+        var harness = Harness.Create(new FakeUiaNodeResolver(null), WalkerWith(model));
 
         var result = await harness.Action.ExecuteAsync(
             new ClickRequest { X = 300, Y = 200, Space = CoordinateSpace.Screen },

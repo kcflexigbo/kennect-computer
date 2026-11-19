@@ -288,17 +288,11 @@ public sealed class ClickAction
                 cancellationToken)
             .ConfigureAwait(false);
 
-        // With the window foreground, a point that landed near a target can
-        // be corrected to the live element under it. A container or a point
-        // outside the window keeps the original coordinate.
-        SnapInfo? snappedTo = null;
-        var snap = _resolver.SnapToPoint(window.Hwnd, point.X, point.Y, cancellationToken);
-        if (snap is not null
-            && CoordinateTarget.TryBoundsCenter(snap.Bounds, window.Info, out var snappedPoint))
-        {
-            point = snappedPoint;
-            snappedTo = new SnapInfo(snap.Role, snap.Name);
-        }
+        // A fresh walk finds the smallest leaf under the point; the click then
+        // lands on its center instead of the estimate. A gap or a container
+        // keeps the original coordinate.
+        var (snappedPoint, snappedTo) = SnapToWalkedElement(window, point, cancellationToken);
+        point = snappedPoint;
 
         cancellationToken.ThrowIfCancellationRequested();
         _input.MoveTo(point.X, point.Y);
@@ -306,6 +300,89 @@ public sealed class ClickAction
 
         return Succeeded(window.Info, "coordinates", snappedTo);
     }
+
+    private static readonly HashSet<string> SnapContainerRoles = new(StringComparer.Ordinal)
+    {
+        "application",
+        "custom",
+        "dataitem",
+        "document",
+        "group",
+        "list",
+        "listitem",
+        "menubar",
+        "pane",
+        "scrollbar",
+        "table",
+        "titlebar",
+        "toolbar",
+        "window",
+    };
+
+    /// <summary>
+    /// Finds the smallest live leaf whose bounds contain the point and
+    /// returns its center. The walk is the same fresh read snapshot and find
+    /// use, so it works on apps whose UIA hit-testing only returns the
+    /// top-level pane.
+    /// </summary>
+    private (Input.Point Point, SnapInfo? SnappedTo) SnapToWalkedElement(
+        ResolvedWindow window,
+        Input.Point point,
+        CancellationToken cancellationToken)
+    {
+        var options = new SnapshotOptions
+        {
+            Mode = SnapshotMode.A11y,
+            MaxDepth = FindAction.WalkMaxDepth,
+            MaxNodes = FindAction.WalkMaxNodes,
+        };
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var tree = _walker.Walk(window.Hwnd, options, cancellationToken);
+        if (tree is null)
+        {
+            return (point, null);
+        }
+
+        var slice = TreeSlicer.Slice(tree, options, generation: 0);
+        Node? best = null;
+        long bestArea = long.MaxValue;
+
+        foreach (var node in slice.Nodes)
+        {
+            var bounds = node.Bounds;
+            if (bounds.Width <= 0
+                || bounds.Height <= 0
+                || bounds.Height > 80
+                || bounds.Width > 1200
+                || SnapContainerRoles.Contains(node.Role)
+                || !Contains(bounds, point))
+            {
+                continue;
+            }
+
+            var area = (long)bounds.Width * bounds.Height;
+            if (area < bestArea)
+            {
+                best = node;
+                bestArea = area;
+            }
+        }
+
+        if (best is null
+            || !CoordinateTarget.TryBoundsCenter(best.Bounds, window.Info, out var center))
+        {
+            return (point, null);
+        }
+
+        return (center, new SnapInfo(best.Role, best.Name));
+    }
+
+    private static bool Contains(Rect bounds, Input.Point point)
+        => point.X >= bounds.X
+            && point.X < bounds.X + bounds.Width
+            && point.Y >= bounds.Y
+            && point.Y < bounds.Y + bounds.Height;
 
     private static bool RequiresMouseGesture(ClickRequest request)
         => request.Button != MouseButton.Left
