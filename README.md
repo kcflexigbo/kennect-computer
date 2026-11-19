@@ -5,9 +5,10 @@ an MCP server and a per-user Windows host. The MCP server speaks JSON-RPC 2.0
 over a token-authenticated named pipe to a .NET 10 host that owns window
 enumeration, accessibility, focus, and screen capture.
 
-**Current milestone: M2 core actions (Windows).** The six M1 tools plus the M2
-input, perception, and batch tools work end to end; Feishu automation (M3) and
-macOS (M5) arrive in later plans. See `DESIGN.md` for the full design.
+**Current milestone: M3 Feishu reply flow (Windows).** The M1 and M2 tools work
+end to end, and the flagship Feishu reply flow has a repeatable acceptance
+runbook and a recorded live run. macOS (M5) remains a later milestone. See
+`DESIGN.md` for the full design.
 
 ## Requirements
 
@@ -294,6 +295,22 @@ live check yourself against a window you open, never against a real chat:
    (UTF-8 byte length) and `textSha256` (hex SHA-256), never the text; the
    `computer_read_text` line carries no text either.
 9. Exit the host from the tray.
+
+## Manual M3 acceptance
+
+The Feishu reply acceptance runbook is `scripts/acceptance-feishu.md`. It sends
+one message in a dedicated test chat — the self-chat or a test group, never a
+real conversation — and verifies the thread and the cleared composer. The
+recorded live run is `docs/acceptance/2026-11-19-feishu-reply.md`; the measured
+thread surface is `docs/spikes/2026-11-19-windows-feishu-live-thread.md`.
+
+The dry run for the same choreography is:
+
+```powershell
+dotnet test packages/host-windows/KennectComputer.Host.Tests --filter M3Flow
+```
+
+It uses an owned chat-like window and never launches Feishu.
 
 ## Development loop
 
