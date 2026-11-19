@@ -6,8 +6,9 @@ selected Feishu, clicked the self-chat's title in the chat list, and read the
 thread, the composer, and the accessibility tree.
 
 **No message was sent and no input was typed.** The only actions were
-`computer_windows`, `computer_select`, `computer_find`, one click on the
-self-chat title, one `computer_snapshot`, and two `computer_read_text` calls.
+`computer_status`, `computer_windows`, `computer_select`, `computer_find`, one
+click on the self-chat title, one `computer_snapshot`, and two
+`computer_read_text` calls.
 
 ## Environment
 
@@ -29,7 +30,7 @@ account's Feishu view).
 | Field | Value |
 |---|---|
 | Chat-list document | role `document`, name `messenger`, identifier `RootWebArea`, bounds (3059, 271, 448, 1106) |
-| Test-chat title | role `text`, name `Igbo Kenneth Chiagozie`, bounds (3123, 1200, 147, 17) |
+| Test-chat title | role `text`, name `Igbo Kenneth Chiagozie`, identifier none, bounds (3123, 1200, 147, 17) |
 | Test-chat row | role `group`, name empty, bounds (3067, 1190, 432, 60) |
 | Test-chat tag | role `text`, name `All Staff`, bounds (3277, 1203, 35, 12) |
 
@@ -103,7 +104,8 @@ The Send control is unnamed. The composer row contains **eight** unnamed
 | `n6:182` | (4665, 1318, 34, 26) | 34 |
 | `n6:185` | (4703, 1318, 26, 26) | 26 |
 | `n6:187` | (4733, 1318, 26, 26) | 26 |
-| **`n6:188`** | **(4767, 1318, 36, 26)** | **36** || `n6:189` | (4803, 1318, 20, 26) | 20 |
+| **`n6:188`** | **(4767, 1318, 36, 26)** | **36** |
+| `n6:189` | (4803, 1318, 20, 26) | 20 |
 
 The screenshot shows the paper-plane icon at the far right of the composer row,
 in the 36 × 26 button `n6:188` (role `button`, name empty, identifier none,

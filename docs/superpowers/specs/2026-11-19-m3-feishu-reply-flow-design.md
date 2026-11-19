@@ -1,6 +1,6 @@
 # Kennect Computer — M3 Feishu Reply Flow Design
 
-**Status:** Draft for approval
+**Status:** Approved (user, 2026-11-19)
 **Date:** 2026-11-19
 **Owner:** Kenneth Igbo
 **Milestone:** M3 — Feishu flow

@@ -77,8 +77,10 @@ names are stable; re-measure bounds after a resize.
    { "text": "Igbo Kenneth Chiagozie", "role": "text" }
    ```
 
-   Expect four matches: the title, one assistant title, one docs preview, and
-   one join-notice preview. Choose the node whose `name` is exactly
+   The count is state-dependent: four matches before the thread is open (the
+   title, one assistant title, one docs preview, and one join-notice preview)
+   and eight after (the open thread adds the header, the join message, and the
+   composer placeholder). Choose the node whose `name` is exactly
    `Igbo Kenneth Chiagozie` and whose bounds are inside the chat-list row.
    If none or more than one satisfies both conditions, stop.
 

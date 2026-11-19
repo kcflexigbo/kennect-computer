@@ -43,14 +43,16 @@ the audit log contains the run without message content.
 File: `C:\Users\Kenneth Igbo\AppData\Local\KennectComputer\audit\2026-11-19.jsonl`
 
 The run’s entries are present from `computer_status` through the final
-`computer_read_text`. The type entry is:
+`computer_read_text`. The type entry excerpt is:
 
 ```json
 {"tool":"computer_type","result":"ok","windowId":"w_1801864377574359046","process":"Feishu","nodeId":"n10:170","textLength":44,"textSha256":"b78a0d75cf66284557b1e3c5397222a151e9e9332d097e02c1e0ced12088da84"}
 ```
 
 `textLength` 44 is the UTF-8 byte length; the text itself is not recorded.
-A search of the audit file for `Kennect M3 acceptance test` returned 0 matches.
+The full record also carries `timestamp`, `sessionId`, and `durationMs`; they
+are omitted here for brevity. A search of the audit file for
+`Kennect M3 acceptance test` returned 0 matches.
 
 ## Deviations
 

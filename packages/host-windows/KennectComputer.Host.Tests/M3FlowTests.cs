@@ -35,7 +35,9 @@ public sealed class M3FlowTests
                 CancellationToken.None),
             "opening the test chat");
 
-        Assert.Equal(M3ChatTestWindow.TestChat, window.HeaderText);
+        Assert.Equal(
+            M3ChatTestWindow.TestChat,
+            WaitFor(() => window.HeaderText, M3ChatTestWindow.TestChat));
 
         snapshot = harness.Snapshot(image: false);
         var messages = Find(snapshot, "edit", "Messages");
@@ -60,10 +62,11 @@ public sealed class M3FlowTests
             "composing the reply");
         Assert.Equal("paste", typed.Method);
 
-        var draft = await harness.ReadText.ExecuteAsync(
-            new ReadTextRequest { NodeId = composer.NodeId },
-            CancellationToken.None);
-        Assert.Equal(M3ChatTestWindow.ReplyText, draft.Text);
+        var draft = await ReadTextUntilAsync(
+            harness,
+            composer.NodeId,
+            M3ChatTestWindow.ReplyText);
+        Assert.Equal(M3ChatTestWindow.ReplyText, draft);
 
         var sent = await InputAsync(
             window,
@@ -84,9 +87,12 @@ public sealed class M3FlowTests
             "sending the reply");
         Assert.Equal("click", sent.Action);
 
+        var expectedPane = M3ChatTestWindow.PreviousMessage
+            + Environment.NewLine
+            + M3ChatTestWindow.ReplyText;
+        Assert.Equal(expectedPane, WaitFor(() => window.MessagesText, expectedPane));
+        Assert.Equal(string.Empty, WaitFor(() => window.ComposerText, string.Empty));
         Assert.Equal(1, window.SendCount);
-        Assert.Contains(M3ChatTestWindow.ReplyText, window.MessagesText);
-        Assert.Equal(string.Empty, window.ComposerText);
     }
 
     [Fact]
@@ -104,7 +110,9 @@ public sealed class M3FlowTests
                 CancellationToken.None),
             "opening the other chat");
 
-        Assert.Equal(M3ChatTestWindow.OtherChat, window.HeaderText);
+        Assert.Equal(
+            M3ChatTestWindow.OtherChat,
+            WaitFor(() => window.HeaderText, M3ChatTestWindow.OtherChat));
 
         snapshot = harness.Snapshot(image: false);
         var composer = Find(snapshot, "edit", "Composer");
@@ -120,6 +128,10 @@ public sealed class M3FlowTests
                 },
                 CancellationToken.None),
             "composing the reply");
+
+        Assert.Equal(
+            M3ChatTestWindow.ReplyText,
+            WaitFor(() => window.ComposerText, M3ChatTestWindow.ReplyText));
 
         var failure = await Assert.ThrowsAsync<ActionFailedException>(() =>
             harness.Click.ExecuteAsync(
@@ -140,7 +152,7 @@ public sealed class M3FlowTests
         Assert.Equal(ErrorCode.ExpectationFailed, failure.Code);
         Assert.Equal(0, window.SendCount);
         Assert.Equal(M3ChatTestWindow.ReplyText, window.ComposerText);
-        Assert.DoesNotContain(M3ChatTestWindow.ReplyText, window.MessagesText);
+        Assert.Equal(string.Empty, window.MessagesText);
     }
 
     [Fact]
@@ -163,6 +175,62 @@ public sealed class M3FlowTests
 
     private static Node Find(Snapshot snapshot, string role, string name)
         => Assert.Single(snapshot.Nodes, node => node.Role == role && node.Name == name);
+
+    /// <summary>
+    /// Polls a UI property. UIA activation and input are asynchronous, so a
+    /// click or paste handler can land after the action call returns.
+    /// </summary>
+    private static string WaitFor(Func<string> read, string expected)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        var last = read();
+
+        while (DateTime.UtcNow < deadline
+            && !string.Equals(last, expected, StringComparison.Ordinal))
+        {
+            Thread.Sleep(25);
+            last = read();
+        }
+
+        return last;
+    }
+
+    /// <summary>
+    /// Repeats a read_text until the control shows the expected text. A paste
+    /// is consumed on the target's UI thread, so the first read can observe
+    /// the pre-paste state.
+    /// </summary>
+    private static async Task<string> ReadTextUntilAsync(
+        ActionHarness harness,
+        string nodeId,
+        string expected)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        var last = string.Empty;
+
+        while (DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                last = (await harness.ReadText.ExecuteAsync(
+                    new ReadTextRequest { NodeId = nodeId },
+                    CancellationToken.None)).Text;
+
+                if (string.Equals(last, expected, StringComparison.Ordinal))
+                {
+                    return last;
+                }
+            }
+            catch (ActionFailedException)
+            {
+                // A transient provider read is retried until the deadline.
+            }
+
+            await Task.Delay(25);
+        }
+
+        return last;
+    }
 
     /// <summary>
     /// Turns a focus or input-injection failure into an explicit environment

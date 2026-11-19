@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status:** Complete (2026-11-19). Tasks 1–5 and 7 were executed; Task 6 (conditional generic fix) was not needed because the live acceptance passed.
+
 **Goal:** Prove the Feishu reply flow end to end using only the generic M2 tools, leave a repeatable acceptance runbook and a live run record, and fix only the generic gaps the live run proves necessary.
 
 **Architecture:** Acceptance-first. One read-only live-thread measurement feeds a runbook; an owned chat-like test window provides a deterministic dry run of the same choreography; the live run is the proof. No new product tool, no app adapter. If the live run requires app-specific logic, stop and design the orchestrator fallback instead of bending the generic tools.
