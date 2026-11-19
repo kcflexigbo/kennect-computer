@@ -380,9 +380,11 @@ excluded processes/titles, and `auditRetentionDays`. A per-user
 M1 consumes the stop hotkey, the `perception` defaults (`defaultMode`,
 `maxDepth`, `maxNodes`, `imageLongEdge`, `maxImageLongEdge`), the privacy
 exclusions, and `auditRetentionDays` (the MCP server reads the same file and
-overlay to prune its audit log). `control.authorizationMode`,
-`control.consequentialGate`, and `host.startOnDemand` are reserved for M4; edit
-them only when that milestone lands.
+overlay to prune its audit log). `control.authorizationMode` defaults to
+`per-app`; set it to `allow-all` to skip the first-use app prompt entirely
+(exclusions and the stop hotkey still apply). `control.consequentialGate` and
+`host.startOnDemand` are reserved for M4; edit them only when that milestone
+lands.
 
 Environment variables:
 
@@ -412,7 +414,8 @@ Environment variables:
   `LOCKED_BY_OTHER_SESSION`.
 - The first time a session controls a non-pre-authorized app, the tray asks
   Allow once / Allow for session / Deny. Denied apps are recorded for the
-  session.
+  session. Set `control.authorizationMode` to `allow-all` in the config to
+  skip this prompt on a single-user machine.
 - No telemetry and no network calls. Snapshots and outlines stay local except
   for the tool results returned to the model.
 

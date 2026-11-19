@@ -67,13 +67,22 @@ internal static class Program
             trayReady);
         var tray = await WaitForTrayAsync(trayReady).ConfigureAwait(false);
 
-        // Without a tray there is no prompt surface, so control fails closed
-        // while status, windows, and snapshots keep working.
-        IAppAuthorization authorization = tray is null
-            ? new AppAuthorization(config, new DenyAllAuthorizationPrompt())
-            : new AppAuthorization(
-                config,
-                new WinFormsAuthorizationPrompt(work => tray.InvokeAsync(work)));
+        // "allow-all" is the deliberate opt-out for a single-user machine that
+        // does not want the first-use prompt; exclusions, the stop hotkey, and
+        // every other guard still apply. The default remains per-app, and
+        // without a tray control fails closed while status, windows, and
+        // snapshots keep working.
+        var allowAll = string.Equals(
+            config.Control.AuthorizationMode?.Trim(),
+            "allow-all",
+            StringComparison.OrdinalIgnoreCase);
+        IAppAuthorization authorization = allowAll
+            ? new AllowAllAuthorization()
+            : tray is null
+                ? new AppAuthorization(config, new DenyAllAuthorizationPrompt())
+                : new AppAuthorization(
+                    config,
+                    new WinFormsAuthorizationPrompt(work => tray.InvokeAsync(work)));
 
         // One foreground seam, walker, snapshotter, and selection store serve
         // both the M1 methods and every M2 action service, so focus, snapshot
