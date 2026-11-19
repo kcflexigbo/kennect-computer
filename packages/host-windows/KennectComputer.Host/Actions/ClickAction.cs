@@ -176,7 +176,24 @@ public sealed class ClickAction
             : request.Role.Trim().ToLowerInvariant();
 
         var matches = _resolver.FindByText(window.Hwnd, text, role, cancellationToken);
-        if (matches.Count == 0)
+
+        // Electron windows can expose the same accessibility element through
+        // two identical branches. Matches with the same role, name, and bounds
+        // are one element, not an ambiguous request.
+        var distinct = matches
+            .GroupBy(match => new
+            {
+                match.Role,
+                match.Name,
+                match.Bounds.X,
+                match.Bounds.Y,
+                match.Bounds.Width,
+                match.Bounds.Height,
+            })
+            .Select(group => group.First())
+            .ToList();
+
+        if (distinct.Count == 0)
         {
             throw Failure(
                 ErrorCode.StaleSnapshot,
@@ -184,15 +201,15 @@ public sealed class ClickAction
                 + "take a fresh snapshot or use find.");
         }
 
-        if (matches.Count > 1)
+        if (distinct.Count > 1)
         {
             throw Failure(
                 ErrorCode.InvalidRequest,
-                $"{matches.Count} elements match the click text \"{text}\"; "
+                $"{distinct.Count} elements match the click text \"{text}\"; "
                 + "use a more specific text or role.");
         }
 
-        var live = matches[0];
+        var live = distinct[0];
 
         await _preflight
             .FocusAsync(

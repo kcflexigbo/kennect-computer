@@ -381,7 +381,8 @@ public sealed class ClickActionTests
     public async Task AnAmbiguousTextSelectorIsInvalidAndSendsNoInput()
     {
         var first = FakeUiaNode.From(Button());
-        var second = FakeUiaNode.From(Button());
+        var second = FakeUiaNode.From(
+            Button() with { Bounds = new Rect(400, 70, 120, 32) });
         var harness = Harness.Create(
             new FakeUiaNodeResolver(null) { TextMatches = [first, second] });
 
@@ -393,6 +394,30 @@ public sealed class ClickActionTests
         Assert.Equal(ErrorCode.InvalidRequest, failure.Code);
         Assert.Empty(harness.Input.Calls);
         Assert.Equal(0, harness.Foreground.SetForegroundCalls);
+    }
+
+    [Fact]
+    public async Task DuplicateMatchesForTheSameElementAreNotAmbiguous()
+    {
+        // Electron windows can expose one element through two identical UIA
+        // branches; the same role, name, and bounds mean one target.
+        var first = FakeUiaNode.From(Button()) with
+        {
+            SupportsInvoke = false,
+            SupportsToggle = false,
+            SupportsSelect = false,
+            SupportsExpand = false,
+        };
+        var harness = Harness.Create(
+            new FakeUiaNodeResolver(null) { TextMatches = [first, first] });
+
+        var result = await harness.Action.ExecuteAsync(
+            new ClickRequest { Text = "Send" },
+            CancellationToken.None);
+
+        Assert.Equal("text", result.Method);
+        Assert.Equal([(170, 86)], harness.Input.Moves);
+        Assert.Single(harness.Input.Clicks);
     }
 
     [Fact]
