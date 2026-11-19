@@ -37,7 +37,7 @@ public sealed class M2InputTests
     public async Task ClicksTheButtonByNodeAndTheLabelChanges()
     {
         using var window = M2TestWindow.Start();
-        var harness = new Harness(window);
+        var harness = new ActionHarness(window.Handle, () => window.Bounds, window.ToRawWindow());
         var button = Find(harness.Snapshot(image: false), "button", "Action");
 
         var result = await InputAsync(
@@ -58,7 +58,7 @@ public sealed class M2InputTests
     public async Task ClicksTheButtonByImageSpaceCoordinatesFromARealSnapshot()
     {
         using var window = M2TestWindow.Start();
-        var harness = new Harness(window);
+        var harness = new ActionHarness(window.Handle, () => window.Bounds, window.ToRawWindow());
         var snapshot = harness.Snapshot(image: true);
         var button = Find(snapshot, "button", "Action");
 
@@ -91,7 +91,7 @@ public sealed class M2InputTests
     public async Task PasteEntersCjkTextAndReadTextReturnsItExactly()
     {
         using var window = M2TestWindow.Start();
-        var harness = new Harness(window);
+        var harness = new ActionHarness(window.Handle, () => window.Bounds, window.ToRawWindow());
         var editor = Find(harness.Snapshot(image: false), "edit", "Editor");
 
         // A distinct sentinel makes the restore race observable: the host must
@@ -137,7 +137,7 @@ public sealed class M2InputTests
     public async Task KeysMethodTypesAsciiTextThatReadTextMatches()
     {
         using var window = M2TestWindow.Start();
-        var harness = new Harness(window);
+        var harness = new ActionHarness(window.Handle, () => window.Bounds, window.ToRawWindow());
         var editor = Find(harness.Snapshot(image: false), "edit", "Editor");
 
         var result = await InputAsync(
@@ -161,7 +161,7 @@ public sealed class M2InputTests
     public async Task PasswordFieldContentIsNeverCapturedOrReturned()
     {
         using var window = M2TestWindow.Start();
-        var harness = new Harness(window);
+        var harness = new ActionHarness(window.Handle, () => window.Bounds, window.ToRawWindow());
         var snapshot = harness.Snapshot(image: false);
         var password = Find(snapshot, "edit", "Password");
 
@@ -186,7 +186,7 @@ public sealed class M2InputTests
     public async Task ScrollsTheListAndChangesItsTopIndex()
     {
         using var window = M2TestWindow.Start();
-        var harness = new Harness(window);
+        var harness = new ActionHarness(window.Handle, () => window.Bounds, window.ToRawWindow());
         var list = Find(harness.Snapshot(image: false), "list", "List");
 
         Assert.Equal(0, window.ListTopIndex);
@@ -219,7 +219,7 @@ public sealed class M2InputTests
     public async Task ANodeFromAnOlderSnapshotReturnsStaleSnapshotAndDoesNotClick()
     {
         using var window = M2TestWindow.Start();
-        var harness = new Harness(window);
+        var harness = new ActionHarness(window.Handle, () => window.Bounds, window.ToRawWindow());
         var first = harness.Snapshot(image: false);
         var button = Find(first, "button", "Action");
 
@@ -241,7 +241,7 @@ public sealed class M2InputTests
     public async Task AFailedExpectationReturnsExpectationFailedAndDoesNotClick()
     {
         using var window = M2TestWindow.Start();
-        var harness = new Harness(window);
+        var harness = new ActionHarness(window.Handle, () => window.Bounds, window.ToRawWindow());
         var button = Find(harness.Snapshot(image: false), "button", "Action");
 
         var failure = await Assert.ThrowsAsync<ActionFailedException>(() =>
@@ -263,7 +263,7 @@ public sealed class M2InputTests
     public async Task ABatchRunsClickTypeAndReadTextInOrder()
     {
         using var window = M2TestWindow.Start();
-        var harness = new Harness(window);
+        var harness = new ActionHarness(window.Handle, () => window.Bounds, window.ToRawWindow());
         var snapshot = harness.Snapshot(image: false);
         var button = Find(snapshot, "button", "Action");
         var editor = Find(snapshot, "edit", "Editor");
@@ -336,7 +336,7 @@ public sealed class M2InputTests
     public async Task ABatchWithAFailingMiddleStepReportsItsIndexAndStops()
     {
         using var window = M2TestWindow.Start();
-        var harness = new Harness(window);
+        var harness = new ActionHarness(window.Handle, () => window.Bounds, window.ToRawWindow());
         var snapshot = harness.Snapshot(image: false);
         var editor = Find(snapshot, "edit", "Editor");
         var button = Find(snapshot, "button", "Action");
@@ -453,7 +453,7 @@ public sealed class M2InputTests
     /// pre-input state.
     /// </summary>
     private static async Task<string> ReadTextUntilAsync(
-        Harness harness,
+        ActionHarness harness,
         string nodeId,
         string expected)
     {
@@ -486,155 +486,6 @@ public sealed class M2InputTests
 
     /// <summary>Gives a would-be asynchronous click time to fire.</summary>
     private static void Settle() => Thread.Sleep(150);
-
-    /// <summary>
-    /// Every M2 service wired to the actual Windows implementations, exactly as
-    /// the dispatcher wires them, with the owned window registered through a
-    /// test <see cref="IWindowApi"/> that re-reads the live form.
-    /// </summary>
-    private sealed class Harness
-    {
-        public Harness(M2TestWindow window)
-        {
-            Window = window;
-
-            // The registry sees only the owned window, but through the same
-            // live identity contract the real WindowApi implements.
-            Windows = new OwnedWindowApi(window);
-            Registry = new WindowRegistry(Windows);
-            SelectedWindow = Registry.Register(window.ToRawWindow());
-            Selection = new SelectionStore();
-            Selection.Select(SelectedWindow);
-
-            Snapshots = new SnapshotStore();
-            Walker = new WindowsUiaWalker();
-            Resolver = new WindowsUiaNodeResolver();
-            Clipboard = new WindowsClipboard();
-            Input = new WindowsInputSender(new SendInputApi());
-            Snapshotter = new UiaSnapshotter(Walker);
-
-            var foregroundApi = new WindowsForegroundApi();
-            var preflight = new ActionPreflight(
-                new ForegroundService(foregroundApi),
-                Selection,
-                Registry,
-                new ExpectEvaluator(Walker, foregroundApi),
-                TimeSpan.FromSeconds(2));
-
-            Click = new ClickAction(Walker, Resolver, preflight, Input, Snapshots);
-            Type = new TypeAction(Resolver, preflight, Input, Clipboard, Snapshots);
-            Key = new KeyAction(preflight, Input);
-            Scroll = new ScrollAction(Resolver, preflight, Input, Snapshots);
-            ReadText = new ReadTextAction(Resolver, Snapshots, Selection, Registry);
-            Find = new FindAction(Walker, Snapshotter, Snapshots, Selection, Registry);
-            Wait = new WaitAction(
-                Walker,
-                new WindowEnumerator(Windows, Registry),
-                Selection,
-                Registry,
-                SystemWaitClock.Instance);
-            Batch = new BatchAction(
-                Click,
-                Type,
-                Key,
-                Scroll,
-                Wait,
-                ReadText,
-                Snapshotter,
-                Snapshots,
-                Selection,
-                Registry);
-        }
-
-        public M2TestWindow Window { get; }
-
-        public IWindowApi Windows { get; }
-
-        public WindowRegistry Registry { get; }
-
-        public WindowInfo SelectedWindow { get; }
-
-        public SelectionStore Selection { get; }
-
-        public SnapshotStore Snapshots { get; }
-
-        public WindowsUiaWalker Walker { get; }
-
-        public WindowsUiaNodeResolver Resolver { get; }
-
-        public WindowsClipboard Clipboard { get; }
-
-        public WindowsInputSender Input { get; }
-
-        public UiaSnapshotter Snapshotter { get; }
-
-        public ClickAction Click { get; }
-
-        public TypeAction Type { get; }
-
-        public KeyAction Key { get; }
-
-        public ScrollAction Scroll { get; }
-
-        public ReadTextAction ReadText { get; }
-
-        public FindAction Find { get; }
-
-        public WaitAction Wait { get; }
-
-        public BatchAction Batch { get; }
-
-        /// <summary>
-        /// Takes a real accessibility (and optionally image) snapshot through
-        /// the selected window and saves it for later node actions.
-        /// </summary>
-        public Snapshot Snapshot(bool image)
-        {
-            // One bounds read for the capture, the saved state, and later
-            // coordinate mapping, so the three can never disagree.
-            var bounds = Window.Bounds;
-            var capture = Snapshotter.Capture(
-                Window.Handle,
-                bounds,
-                new SnapshotOptions
-                {
-                    Mode = SnapshotMode.A11y,
-                    Image = image,
-                },
-                CancellationToken.None);
-
-            capture.Snapshot.Window = SelectedWindow;
-            Snapshots.Save(
-                SelectedWindow.WindowId,
-                capture.Snapshot,
-                capture.NodeMap,
-                bounds);
-
-            Assert.Null(capture.Snapshot.Warning);
-            return capture.Snapshot;
-        }
-    }
-
-    /// <summary>
-    /// The registry's window source: only the owned test window, with its live
-    /// native identity. It re-reads the form through the owned-window host, so
-    /// a disposed window stops resolving instead of acting on a dead handle.
-    /// </summary>
-    private sealed class OwnedWindowApi : IWindowApi
-    {
-        private readonly M2TestWindow _window;
-
-        public OwnedWindowApi(M2TestWindow window)
-        {
-            _window = window;
-        }
-
-        public IReadOnlyList<RawWindow> GetTopLevelWindows()
-            => _window.IsAlive ? [_window.ToRawWindow()] : [];
-
-        public RawWindow? TryGetWindow(nint hwnd)
-            => hwnd == _window.Handle && _window.IsAlive ? _window.ToRawWindow() : null;
-    }
 }
 
 /// <summary>
