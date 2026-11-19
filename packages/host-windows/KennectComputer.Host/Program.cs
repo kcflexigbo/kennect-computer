@@ -99,7 +99,7 @@ internal static class Program
         var input = new WindowsInputSender(new SendInputApi());
         var clipboard = new WindowsClipboard();
 
-        var click = new ClickAction(resolver, preflight, input, snapshots);
+        var click = new ClickAction(walker, resolver, preflight, input, snapshots);
         var type = new TypeAction(resolver, preflight, input, clipboard, snapshots);
         var key = new KeyAction(preflight, input);
         var scroll = new ScrollAction(resolver, preflight, input, snapshots);

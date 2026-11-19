@@ -30,17 +30,20 @@ namespace KennectComputer.Host.Actions;
 /// </summary>
 public sealed class ClickAction
 {
+    private readonly IUiaWalker _walker;
     private readonly IUiaNodeResolver _resolver;
     private readonly ActionPreflight _preflight;
     private readonly IInputSender _input;
     private readonly SnapshotStore _snapshots;
 
     public ClickAction(
+        IUiaWalker walker,
         IUiaNodeResolver resolver,
         ActionPreflight preflight,
         IInputSender input,
         SnapshotStore snapshots)
     {
+        _walker = walker ?? throw new ArgumentNullException(nameof(walker));
         _resolver = resolver ?? throw new ArgumentNullException(nameof(resolver));
         _preflight = preflight ?? throw new ArgumentNullException(nameof(preflight));
         _input = input ?? throw new ArgumentNullException(nameof(input));
@@ -175,20 +178,38 @@ public sealed class ClickAction
             ? null
             : request.Role.Trim().ToLowerInvariant();
 
-        var matches = _resolver.FindByText(window.Hwnd, text, role, cancellationToken);
+        // A cached walk is the same read that powers snapshot/find and is much
+        // faster than reading identity from every live descendant one by one.
+        var options = new SnapshotOptions
+        {
+            Mode = SnapshotMode.A11y,
+            MaxDepth = FindAction.WalkMaxDepth,
+            MaxNodes = FindAction.WalkMaxNodes,
+        };
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var tree = _walker.Walk(window.Hwnd, options, cancellationToken);
+        var slice = tree is null
+            ? new SliceResult()
+            : TreeSlicer.Slice(tree, options, generation: 0);
+
+        var matches = slice.Nodes
+            .Where(node => (role is null || string.Equals(node.Role, role, StringComparison.Ordinal))
+                && node.Name.Contains(text, StringComparison.OrdinalIgnoreCase))
+            .ToList();
 
         // Electron windows can expose the same accessibility element through
         // two identical branches. Matches with the same role, name, and bounds
         // are one element, not an ambiguous request.
         var distinct = matches
-            .GroupBy(match => new
+            .GroupBy(node => new
             {
-                match.Role,
-                match.Name,
-                match.Bounds.X,
-                match.Bounds.Y,
-                match.Bounds.Width,
-                match.Bounds.Height,
+                node.Role,
+                node.Name,
+                node.Bounds.X,
+                node.Bounds.Y,
+                node.Bounds.Width,
+                node.Bounds.Height,
             })
             .Select(group => group.First())
             .ToList();
@@ -209,7 +230,12 @@ public sealed class ClickAction
                 + "use a more specific text or role.");
         }
 
-        var live = distinct[0];
+        var target = distinct[0];
+        var live = _resolver.Resolve(window.Hwnd, slice.NodeMap[target.NodeId], cancellationToken)
+            ?? throw Failure(
+                ErrorCode.StaleSnapshot,
+                $"The element matching \"{text}\" no longer matches the live element; "
+                + "take a fresh snapshot.");
 
         await _preflight
             .FocusAsync(

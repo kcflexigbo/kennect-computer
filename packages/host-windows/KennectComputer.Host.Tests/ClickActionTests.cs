@@ -322,26 +322,43 @@ public sealed class ClickActionTests
         Assert.Equal([(300, 200)], harness.Input.Moves);
     }
 
+    private static FakeUiaWalker WalkerWith(params TreeModel[] messages) => new(
+        new TreeModel
+        {
+            Role = "window",
+            Name = "Notepad",
+            Children = [.. messages],
+        });
+
+    private static TreeModel Message(
+        string name,
+        int x = 110,
+        int y = 70,
+        string role = "text") => new()
+    {
+        Role = role,
+        Name = name,
+        Bounds = new Rect(x, y, 120, 32),
+    };
+
     [Fact]
     public async Task ATextSelectorClicksTheSingleMatchingElement()
     {
-        var live = FakeUiaNode.From(Button()) with
+        var model = Message("Send");
+        var live = FakeUiaNode.From(model) with
         {
             SupportsInvoke = false,
             SupportsToggle = false,
             SupportsSelect = false,
             SupportsExpand = false,
         };
-        var resolver = new FakeUiaNodeResolver(live) { TextMatches = [live] };
-        var harness = Harness.Create(resolver);
+        var harness = Harness.Create(new FakeUiaNodeResolver(live), WalkerWith(model));
 
         var result = await harness.Action.ExecuteAsync(
             new ClickRequest { Text = "Send" },
             CancellationToken.None);
 
         Assert.Equal("text", result.Method);
-        Assert.Equal("Send", resolver.LastText);
-        Assert.Null(resolver.LastRole);
         Assert.Equal([(170, 86)], harness.Input.Moves);
         Assert.Equal([(MouseButton.Left, 1)], harness.Input.Clicks);
         Assert.Equal(1, harness.Foreground.SetForegroundCalls);
@@ -350,8 +367,9 @@ public sealed class ClickActionTests
     [Fact]
     public async Task ATextSelectorUsesASemanticPatternWhenAvailable()
     {
-        var live = FakeUiaNode.From(Button());
-        var harness = Harness.Create(new FakeUiaNodeResolver(live) { TextMatches = [live] });
+        var model = Message("Send");
+        var live = FakeUiaNode.From(model);
+        var harness = Harness.Create(new FakeUiaNodeResolver(live), WalkerWith(model));
 
         var result = await harness.Action.ExecuteAsync(
             new ClickRequest { Text = "Send" },
@@ -365,7 +383,9 @@ public sealed class ClickActionTests
     [Fact]
     public async Task ATextSelectorWithNoMatchIsStaleAndSendsNoInput()
     {
-        var harness = Harness.Create(new FakeUiaNodeResolver(null));
+        var harness = Harness.Create(
+            new FakeUiaNodeResolver(null),
+            WalkerWith(Message("Other")));
 
         var failure = await Assert.ThrowsAsync<ActionFailedException>(() =>
             harness.Action.ExecuteAsync(
@@ -380,11 +400,9 @@ public sealed class ClickActionTests
     [Fact]
     public async Task AnAmbiguousTextSelectorIsInvalidAndSendsNoInput()
     {
-        var first = FakeUiaNode.From(Button());
-        var second = FakeUiaNode.From(
-            Button() with { Bounds = new Rect(400, 70, 120, 32) });
         var harness = Harness.Create(
-            new FakeUiaNodeResolver(null) { TextMatches = [first, second] });
+            new FakeUiaNodeResolver(null),
+            WalkerWith(Message("Send"), Message("Send", x: 400)));
 
         var failure = await Assert.ThrowsAsync<ActionFailedException>(() =>
             harness.Action.ExecuteAsync(
@@ -401,7 +419,8 @@ public sealed class ClickActionTests
     {
         // Electron windows can expose one element through two identical UIA
         // branches; the same role, name, and bounds mean one target.
-        var first = FakeUiaNode.From(Button()) with
+        var model = Message("Send");
+        var live = FakeUiaNode.From(model) with
         {
             SupportsInvoke = false,
             SupportsToggle = false,
@@ -409,7 +428,8 @@ public sealed class ClickActionTests
             SupportsExpand = false,
         };
         var harness = Harness.Create(
-            new FakeUiaNodeResolver(null) { TextMatches = [first, first] });
+            new FakeUiaNodeResolver(live),
+            WalkerWith(model, model));
 
         var result = await harness.Action.ExecuteAsync(
             new ClickRequest { Text = "Send" },
@@ -423,15 +443,16 @@ public sealed class ClickActionTests
     [Fact]
     public async Task ATextSelectorPassesTheRoleToTheResolver()
     {
-        var live = FakeUiaNode.From(Button());
-        var resolver = new FakeUiaNodeResolver(live) { TextMatches = [live] };
-        var harness = Harness.Create(resolver);
+        var model = Message("Send", role: "button");
+        var live = FakeUiaNode.From(model);
+        var resolver = new FakeUiaNodeResolver(live);
+        var harness = Harness.Create(resolver, WalkerWith(model));
 
         await harness.Action.ExecuteAsync(
             new ClickRequest { Text = "Send", Role = "Button" },
             CancellationToken.None);
 
-        Assert.Equal("button", resolver.LastRole);
+        Assert.Equal("button", resolver.LastTarget?.Role);
     }
 
     [Fact]
@@ -734,6 +755,7 @@ public sealed class ClickActionTests
                 ?? new FakeUiaWalker(new TreeModel { Role = "window", Name = "Notepad" });
 
             Action = new ClickAction(
+                Walker,
                 resolver,
                 new ActionPreflight(
                     new ForegroundService(Foreground),

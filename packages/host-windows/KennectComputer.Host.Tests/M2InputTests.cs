@@ -521,7 +521,7 @@ public sealed class M2InputTests
                 new ExpectEvaluator(Walker, foregroundApi),
                 TimeSpan.FromSeconds(2));
 
-            Click = new ClickAction(Resolver, preflight, Input, Snapshots);
+            Click = new ClickAction(Walker, Resolver, preflight, Input, Snapshots);
             Type = new TypeAction(Resolver, preflight, Input, Clipboard, Snapshots);
             Key = new KeyAction(preflight, Input);
             Scroll = new ScrollAction(Resolver, preflight, Input, Snapshots);

@@ -458,7 +458,7 @@ public sealed class BatchActionTests
             var resolver = new FakeUiaNodeResolver(liveNode);
 
             Action = new BatchAction(
-                new ClickAction(resolver, preflight, Input, Snapshots),
+                new ClickAction(Walker, resolver, preflight, Input, Snapshots),
                 new TypeAction(resolver, preflight, Input, Clipboard, Snapshots),
                 new KeyAction(preflight, Input),
                 new ScrollAction(resolver, preflight, Input, Snapshots),

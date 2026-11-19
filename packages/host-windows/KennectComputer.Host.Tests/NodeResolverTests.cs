@@ -405,28 +405,6 @@ internal sealed class FakeUiaNodeResolver : IUiaNodeResolver
 
     public List<(int X, int Y)> SnapCalls { get; } = [];
 
-    /// <summary>The live elements a text selector should match.</summary>
-    public IReadOnlyList<IUiaNode> TextMatches { get; init; } = [];
-
-    public string? LastText { get; private set; }
-
-    public string? LastRole { get; private set; }
-
-    public bool FindByTextCalled { get; private set; }
-
-    public IReadOnlyList<IUiaNode> FindByText(
-        nint hwnd,
-        string text,
-        string? role,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        FindByTextCalled = true;
-        LastText = text;
-        LastRole = role;
-        return TextMatches;
-    }
-
     public SnapTarget? SnapToPoint(
         nint hwnd,
         int x,

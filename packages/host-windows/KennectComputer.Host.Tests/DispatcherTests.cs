@@ -1626,7 +1626,7 @@ public sealed class DispatcherTests
             new ExpectEvaluator(walker, focus),
             TimeSpan.FromMilliseconds(10));
 
-        var click = new ClickAction(resolver, preflight, input, snapshots);
+        var click = new ClickAction(walker, resolver, preflight, input, snapshots);
         var type = new TypeAction(resolver, preflight, input, clipboard, snapshots);
         var key = new KeyAction(preflight, input);
         var scroll = new ScrollAction(resolver, preflight, input, snapshots);
