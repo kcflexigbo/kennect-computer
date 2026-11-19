@@ -6,7 +6,15 @@
       "mcp__kennect-computer__computer_select",
       "mcp__kennect-computer__computer_snapshot",
       "mcp__kennect-computer__computer_focus",
-      "mcp__kennect-computer__computer_stop"
+      "mcp__kennect-computer__computer_stop",
+      "mcp__kennect-computer__computer_click",
+      "mcp__kennect-computer__computer_type",
+      "mcp__kennect-computer__computer_key",
+      "mcp__kennect-computer__computer_scroll",
+      "mcp__kennect-computer__computer_find",
+      "mcp__kennect-computer__computer_wait",
+      "mcp__kennect-computer__computer_read_text",
+      "mcp__kennect-computer__computer_batch"
     ]
   }
 }
