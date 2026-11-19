@@ -144,8 +144,8 @@ names are stable; re-measure bounds after a resize.
    ```
 
    Require `ACTION_TIMEOUT` with “The operation was stopped.” and a host that
-   still answers `computer_status`. Then take a fresh snapshot before
-   continuing.
+   still answers `computer_status`. Then repeat step 7's snapshot request
+   before continuing; resolve every node reference from that new snapshot.
 
 ### Compose
 
@@ -172,36 +172,60 @@ names are stable; re-measure bounds after a resize.
 
 ### Send
 
-12. Confirm exactly one `SEND_NODE` candidate: an unnamed 36 × 26 button at the
+12. Take a fresh snapshot immediately before Send, using the step 7 request
+    body:
+
+    ```json
+    {
+      "windowId": "<the Feishu windowId>",
+      "mode": "both",
+      "image": true,
+      "maxDepth": 60,
+      "maxNodes": 3000
+    }
+    ```
+
+    Re-resolve `HEADER_NODE` by its measured bounds (role `text`, name exactly
+    `Igbo Kenneth Chiagozie`, y ≈ 295 inside the thread pane, x ≥ 3513) and
+    call `computer_read_text` on it. Require the header text is exactly
+    `Igbo Kenneth Chiagozie`. Re-resolve `THREAD_DOCUMENT_NODE`,
+    `COMPOSER_NODE`, and `SEND_NODE` from this snapshot. If the header does not
+    match, stop and clear the draft; do not send.
+
+13. Confirm exactly one `SEND_NODE` candidate: an unnamed 36 × 26 button at the
     far right of the composer row, immediately left of the unnamed 20 × 26 menu
-    arrow, with the paper-plane icon in the snapshot image. If the image does
-    not show the paper plane at that position, or more than one candidate
+    arrow, with the paper-plane icon in the fresh snapshot image. If the image
+    does not show the paper plane at that position, or more than one candidate
     matches, stop.
 
-13. `computer_click` with:
+14. `computer_click` with:
 
     ```json
     {
       "nodeId": "<SEND_NODE>",
       "expect": [
-        { "kind": "text", "role": "text", "name": "Igbo Kenneth Chiagozie" }
+        { "kind": "node", "role": "text", "name": "Igbo Kenneth Chiagozie" }
       ]
     }
     ```
 
     The expectation must pass; a failure returns `EXPECTATION_FAILED` and
-    sends nothing. If it fails, stop.
+    sends nothing. The `kind: "node"` predicate is a window-wide existence
+    check, not a header-scoped assertion: live Feishu exposes the same title in
+    the chat list, so step 12's fresh header read is the binding check. A
+    `kind: "text"` predicate requires `contains`; the shared schema rejects one
+    without it.
 
 ### Verify
 
-14. Take a fresh snapshot and `computer_read_text` on
+15. Take a fresh snapshot and `computer_read_text` on
     `<THREAD_DOCUMENT_NODE>`. Require the exact `<TEST_MESSAGE>` appears and is
     the newest visible message.
 
-15. `computer_read_text` on `<COMPOSER_NODE>`. Require the placeholder
+16. `computer_read_text` on `<COMPOSER_NODE>`. Require the placeholder
     `Message Igbo Kenneth Chiagozie` is present and `<TEST_MESSAGE>` is absent.
 
-16. Check the audit log at
+17. Check the audit log at
     `%LOCALAPPDATA%\KennectComputer\audit\YYYY-MM-DD.jsonl` (or
     `<KENNECT_COMPUTER_SESSION_DIR>\audit` when set). Require entries for this
     run’s tools; a type entry carries `textLength` and `textSha256`, never the
@@ -226,6 +250,7 @@ Stop with no further input when any of these occurs:
 - no Feishu window, or more than one;
 - the `computer_find` title match is ambiguous;
 - the thread header is not exactly `Igbo Kenneth Chiagozie`;
+- the fresh pre-Send header read (step 12) is not exactly `Igbo Kenneth Chiagozie`;
 - the thread document or composer cannot be resolved;
 - the draft read-back does not contain `<TEST_MESSAGE>`;
 - the Send control is missing or ambiguous, or the image does not show the

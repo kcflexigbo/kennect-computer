@@ -10,6 +10,12 @@ namespace KennectComputer.Host.Tests;
 /// M3 dry run of the Feishu reply choreography against an owned chat-like
 /// window (DESIGN §16). The window is created, focused, and closed by the test;
 /// no external app is launched and no real message is sent.
+///
+/// Fidelity limit: the conversation entries are Buttons, so the window-wide
+/// `ExpectNode` for "Test Chat" sees only the header text. Live Feishu also
+/// exposes the title as a text node in the chat list; the runbook's fresh
+/// header read immediately before Send is the binding guard there. This dry
+/// run does not model that duplication.
 /// </summary>
 [Collection(M2InputCollection.Name)]
 public sealed class M3FlowTests

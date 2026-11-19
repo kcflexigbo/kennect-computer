@@ -33,7 +33,7 @@ the audit log contains the run without message content.
 | stop hotkey | **PASS** on retry: a 30 s wait returned `ACTION_TIMEOUT` with “The operation was stopped.” after 6.6 s; the host still answered `computer_status` |
 | `computer_type` | ok, `method: paste`, `needsObservation: true` |
 | read composer | length 47; contained the exact test message |
-| pre-send expectation | `kind: node`, `role: text`, `name: Igbo Kenneth Chiagozie`; click reported `method: pattern` and input was sent |
+| pre-send expectation | the header was verified from the step 7 snapshot before composing. The Send click used the window-wide `kind: node`, `role: text`, `name: Igbo Kenneth Chiagozie` predicate and reported `method: pattern`. The header was **not** re-read immediately before Send in this run; the runbook now requires that binding check (step 12). |
 | send | message bubble appeared at 12:02 PM as node `n11:175`, group identifier `7709728191870422264` |
 | read thread after send | length 359; contained `Kennect M3 acceptance test — please ignore` after 12:02 PM |
 | read composer after send | length 36; placeholder `Message Igbo Kenneth Chiagozie` returned, test message absent |
@@ -63,6 +63,20 @@ A search of the audit file for `Kennect M3 acceptance test` returned 0 matches.
    predicate passed.
 
 Neither deviation changed the result. The message was sent once.
+
+## Pre-send safety limitation
+
+The generic `expect` predicate is window-wide: it passes when any node in the
+window matches the selector, and live Feishu exposes the conversation title in
+the chat list as well as in the thread header. In this recorded run the header
+was verified from the step 7 snapshot before composing, and the chat did not
+change during the run; the Send predicate was a coarse presence check, not a
+header-scoped assertion.
+
+The runbook now adds a binding check: a fresh snapshot immediately before Send,
+an exact `computer_read_text` of the header node resolved by its measured
+bounds, and a stop if the header differs (step 12). Future acceptance runs must
+perform it. No Feishu-specific tool was added.
 
 ## Evidence
 
