@@ -148,7 +148,7 @@ public sealed class WindowsUiaNodeResolver : IUiaNodeResolver
                 return new SnapTarget(identity.Role, identity.Name, identity.Bounds);
             }
 
-            return TryTextRect(automation, element, x, y, out var rect)
+            return TryTextRect(automation, window, element, x, y, out var rect)
                 ? new SnapTarget(identity.Role, identity.Name, rect)
                 : null;
         }
@@ -205,7 +205,13 @@ public sealed class WindowsUiaNodeResolver : IUiaNodeResolver
                 var parent = walker.GetParent(current);
                 if (parent is null)
                 {
-                    return (nint)current.Properties.NativeWindowHandle.ValueOrDefault == handle;
+                    var topLevel = (nint)current.Properties.NativeWindowHandle.ValueOrDefault;
+
+                    // Some providers report no native handle for the root even
+                    // though the element belongs to this process; accept that
+                    // case rather than losing the snap entirely.
+                    return topLevel == handle
+                        || (topLevel == 0 && SameProcess(element, window));
                 }
 
                 current = parent;
@@ -235,17 +241,56 @@ public sealed class WindowsUiaNodeResolver : IUiaNodeResolver
 
     private static bool TryTextRect(
         UIA3Automation automation,
+        AutomationElement window,
         AutomationElement element,
         int x,
         int y,
         out Rect rect)
     {
+        // A container without its own text pattern can still expose the
+        // document's text; walk up before giving up.
+        if (TryTextRectIn(automation, element, x, y, maxAncestors: 12, out rect))
+        {
+            return true;
+        }
+
+        // The point may be over a container whose ancestry does not expose
+        // TextPattern. The window's document is the reliable fallback: its
+        // range rectangles list every text line in the view.
+        try
+        {
+            var document = window.FindFirstDescendant(
+                window.ConditionFactory.ByControlType(ControlType.Document));
+            if (document is not null && document != element)
+            {
+                return TryTextRectIn(automation, document, x, y, maxAncestors: 1, out rect);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            // No document fallback available.
+        }
+
+        rect = new Rect();
+        return false;
+    }
+
+    private static bool TryTextRectIn(
+        UIA3Automation automation,
+        AutomationElement element,
+        int x,
+        int y,
+        int maxAncestors,
+        out Rect rect)
+    {
         rect = new Rect();
 
-        // A container without its own text pattern can still expose the
-        // document's text; walk a few levels up before giving up.
         AutomationElement? current = element;
-        for (var depth = 0; depth < 4 && current is not null; depth++)
+        for (var depth = 0; depth < maxAncestors && current is not null; depth++)
         {
             var pattern = WindowsUiaWalker.Read(
                 () => current.Patterns.Text.PatternOrDefault,
