@@ -16,9 +16,10 @@ namespace KennectComputer.Host.Actions;
 /// never acted on. Expectations run against a fresh accessibility read before
 /// any focus change or input. A node target must belong to the stored snapshot
 /// generation and still match the live element's fingerprint; a text target
-/// must match exactly one live element's accessible name (optionally by role);
-/// the action then prefers a semantic UIA pattern and falls back to clicking
-/// the live bounds center. A non-left button, a count other than one, or any
+/// must match exactly one live element's accessible name (optionally by role)
+/// and is clicked at its freshly walked bounds center. A node target prefers a
+/// semantic UIA pattern and falls back to its live bounds center. A non-left
+/// button, a count other than one, or any
 /// modifier makes the click a mouse gesture, so semantic patterns are skipped
 /// and the bounds-center (or coordinate) path runs instead. Coordinate targets
 /// map through the snapshot's scale and source bounds (image space) or are
@@ -230,12 +231,19 @@ public sealed class ClickAction
                 + "use a more specific text or role.");
         }
 
+        // The walk is the fresh live read that selected this element. A second
+        // fingerprint lookup adds no safety here and fails on apps that reflow
+        // between two reads, so the click uses the walked bounds center and
+        // still verifies it lies inside the selected window.
         var target = distinct[0];
-        var live = _resolver.Resolve(window.Hwnd, slice.NodeMap[target.NodeId], cancellationToken)
-            ?? throw Failure(
+        var targetBounds = slice.NodeMap[target.NodeId].Bounds;
+        if (!CoordinateTarget.TryBoundsCenter(targetBounds, window.Info, out var center))
+        {
+            throw Failure(
                 ErrorCode.StaleSnapshot,
-                $"The element matching \"{text}\" no longer matches the live element; "
+                $"The element matching \"{text}\" is not inside the selected window; "
                 + "take a fresh snapshot.");
+        }
 
         await _preflight
             .FocusAsync(
@@ -244,13 +252,6 @@ public sealed class ClickAction
                 cancellationToken)
             .ConfigureAwait(false);
 
-        if (RequiresMouseGesture(request) is false
-            && TrySemanticAction(live, cancellationToken))
-        {
-            return Succeeded(window.Info, "text");
-        }
-
-        var center = CoordinateTarget.ResolveNodeCenter(live, window.Info, "click");
         cancellationToken.ThrowIfCancellationRequested();
         _input.MoveTo(center.X, center.Y);
         SendClick(request, modifiers, cancellationToken);

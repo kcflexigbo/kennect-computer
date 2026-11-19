@@ -345,14 +345,7 @@ public sealed class ClickActionTests
     public async Task ATextSelectorClicksTheSingleMatchingElement()
     {
         var model = Message("Send");
-        var live = FakeUiaNode.From(model) with
-        {
-            SupportsInvoke = false,
-            SupportsToggle = false,
-            SupportsSelect = false,
-            SupportsExpand = false,
-        };
-        var harness = Harness.Create(new FakeUiaNodeResolver(live), WalkerWith(model));
+        var harness = Harness.Create(new FakeUiaNodeResolver(null), WalkerWith(model));
 
         var result = await harness.Action.ExecuteAsync(
             new ClickRequest { Text = "Send" },
@@ -362,22 +355,6 @@ public sealed class ClickActionTests
         Assert.Equal([(170, 86)], harness.Input.Moves);
         Assert.Equal([(MouseButton.Left, 1)], harness.Input.Clicks);
         Assert.Equal(1, harness.Foreground.SetForegroundCalls);
-    }
-
-    [Fact]
-    public async Task ATextSelectorUsesASemanticPatternWhenAvailable()
-    {
-        var model = Message("Send");
-        var live = FakeUiaNode.From(model);
-        var harness = Harness.Create(new FakeUiaNodeResolver(live), WalkerWith(model));
-
-        var result = await harness.Action.ExecuteAsync(
-            new ClickRequest { Text = "Send" },
-            CancellationToken.None);
-
-        Assert.Equal("text", result.Method);
-        Assert.Equal(["TryInvoke"], live.Calls);
-        Assert.Empty(harness.Input.Calls);
     }
 
     [Fact]
@@ -420,15 +397,8 @@ public sealed class ClickActionTests
         // Electron windows can expose one element through two identical UIA
         // branches; the same role, name, and bounds mean one target.
         var model = Message("Send");
-        var live = FakeUiaNode.From(model) with
-        {
-            SupportsInvoke = false,
-            SupportsToggle = false,
-            SupportsSelect = false,
-            SupportsExpand = false,
-        };
         var harness = Harness.Create(
-            new FakeUiaNodeResolver(live),
+            new FakeUiaNodeResolver(null),
             WalkerWith(model, model));
 
         var result = await harness.Action.ExecuteAsync(
@@ -441,18 +411,22 @@ public sealed class ClickActionTests
     }
 
     [Fact]
-    public async Task ATextSelectorPassesTheRoleToTheResolver()
+    public async Task ATextSelectorFiltersByRole()
     {
-        var model = Message("Send", role: "button");
-        var live = FakeUiaNode.From(model);
-        var resolver = new FakeUiaNodeResolver(live);
-        var harness = Harness.Create(resolver, WalkerWith(model));
+        var textMessage = Message("Send", x: 110);
+        var buttonMessage = Message("Send", x: 400, role: "button");
+        var harness = Harness.Create(
+            new FakeUiaNodeResolver(null),
+            WalkerWith(textMessage, buttonMessage));
 
-        await harness.Action.ExecuteAsync(
+        var result = await harness.Action.ExecuteAsync(
             new ClickRequest { Text = "Send", Role = "Button" },
             CancellationToken.None);
 
-        Assert.Equal("button", resolver.LastTarget?.Role);
+        Assert.Equal("text", result.Method);
+
+        // The button match is 120x32 at (400, 70): its center is (460, 86).
+        Assert.Equal([(460, 86)], harness.Input.Moves);
     }
 
     [Fact]
